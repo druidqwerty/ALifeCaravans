@@ -8,10 +8,11 @@ ALifeCaravans = ALifeCaravans or {}
 local A = ALifeCaravans
 
 A.MOD_ID = "ALifeCaravans"
-A.VERSION = "0.1.0"
+A.VERSION = "0.2.0"
 A.TAG = "[ALC]"
 A.MODULE = "ALifeCaravans"        -- client<->server command module name
 A.MODDATA_ID = "ALifeCaravanId"   -- vehicle ModData key (authoritative side only)
+A.SCHEMA = 2                      -- ledger schema (1 = 0.1.0)
 
 -- Defaults = the Sandbox defaults in 42/media/sandbox-options.txt.
 A.defaults = {
@@ -20,18 +21,23 @@ A.defaults = {
     foundIntervalMinutes = 8,     -- real minutes between new caravans
     cruiseKmh = 35,               -- convoy cruising speed
     crewMin = 3,
-    crewMax = 5,
-    maxVehicles = 2,              -- A-Life arrivals support at most two cars per crew
+    crewMax = 6,
+    maxVehicles = 3,              -- cars per caravan (two A-Life arrival units of two cars)
     renderRadius = 100,           -- a caravan this close to a player drives for real
     releaseRadius = 170,          -- this far from every player it goes back to the ledger
     minSpawnDistance = 45,        -- never materialise closer than this to a player
-    offlineSpeedPercent = 25,     -- ledger travel speed as % of the cruise speed (stops, detours)
+    offlineSpeedPercent = 300,    -- ledger travel speed as % of the cruise speed, far from players
     tripsPerCaravan = 2,          -- town-to-town trips before the caravan is retired
     haltSeconds = 120,            -- how long a flagged-down caravan waits
-    hornHails = true,
+    hornHails = true,             -- horn / headlight flashes flag a caravan down
     allowHostile = true,          -- raider/gang caravans (toll, ambush)
     allowRiders = true,           -- players may hitch a ride
     tradeEnabled = true,
+    escortContracts = true,
+    ambushPercent = 25,           -- chance per leg of an ambush while a player is near
+    radioChatter = true,          -- convoy chatter on A-Life's Knox County Radio
+    abandonCars = true,           -- out-of-fuel / dead-engine cars are left behind
+    markers = true,               -- caravans may be shown on players' maps
     debug = false,
 }
 A.settings = A.settings or {}
@@ -40,6 +46,7 @@ for key, value in pairs(A.defaults) do A.settings[key] = value end
 A.metrics = {
     founded = 0, rendered = 0, renderRefused = 0, released = 0, retired = 0, legs = 0, halts = 0,
     hails = 0, trades = 0, rides = 0, tolls = 0, fights = 0, flights = 0, lines = 0, errors = 0,
+    recrews = 0, abandoned = 0, unstuck = 0, rescouts = 0, escorts = 0, ambushes = 0, radio = 0, barters = 0,
 }
 
 function A.now()
@@ -78,6 +85,13 @@ function A.pick(list)
     return list[A.rand(#list) + 1]
 end
 
+-- Stable small hash of a string (deterministic names, colours).
+function A.hash(text)
+    local value = 5381
+    for index = 1, #tostring(text) do value = (value * 33 + string.byte(text, index)) % 4294967296 end
+    return value
+end
+
 function A.side()
     local server = type(isServer) == "function" and isServer() == true
     local client = type(isClient) == "function" and isClient() == true
@@ -109,6 +123,13 @@ function A.dist(x1, y1, x2, y2)
     return math.sqrt(dx * dx + dy * dy)
 end
 
+-- Kahlua (the game's Lua) has no `next`; use this for "is the table empty".
+function A.isEmpty(value)
+    if type(value) ~= "table" then return true end
+    for _ in pairs(value) do return false end
+    return true
+end
+
 function A.copy(value)
     if type(value) ~= "table" then return value end
     local out = {}
@@ -120,6 +141,17 @@ function A.clamp(value, low, high, default)
     value = tonumber(value)
     if value == nil or value ~= value then return default end
     return math.max(low, math.min(high, value))
+end
+
+-- math.atan2 exists in the game's Kahlua; newer Lua only has math.atan(y, x).
+function A.atan2(y, x)
+    if type(math.atan2) == "function" then return math.atan2(y, x) end
+    return math.atan(y, x)
+end
+
+function A.lerp(a, b, t)
+    t = math.max(0, math.min(1, t))
+    return a + (b - a) * t
 end
 
 -- Replace tbl[name] with factory(original). False when there is nothing to wrap.
@@ -151,19 +183,24 @@ function A.refreshSettings()
     s.maxCaravans = A.clamp(sandbox.MaxCaravans, 1, 8, d.maxCaravans)
     s.foundIntervalMinutes = A.clamp(sandbox.FoundIntervalMinutes, 1, 60, d.foundIntervalMinutes)
     s.cruiseKmh = A.clamp(sandbox.CruiseKmh, 10, 70, d.cruiseKmh)
-    s.crewMin = A.clamp(sandbox.CrewMin, 2, 8, d.crewMin)
-    s.crewMax = math.max(s.crewMin, A.clamp(sandbox.CrewMax, 2, 8, d.crewMax))
-    s.maxVehicles = A.clamp(sandbox.MaxVehicles, 1, 2, d.maxVehicles)
+    s.crewMin = A.clamp(sandbox.CrewMin, 2, 12, d.crewMin)
+    s.crewMax = math.max(s.crewMin, A.clamp(sandbox.CrewMax, 2, 12, d.crewMax))
+    s.maxVehicles = A.clamp(sandbox.MaxVehicles, 1, 4, d.maxVehicles)
     s.renderRadius = A.clamp(sandbox.RenderRadius, 60, 200, d.renderRadius)
     s.releaseRadius = math.max(s.renderRadius + 30, A.clamp(sandbox.ReleaseRadius, 90, 300, d.releaseRadius))
     s.minSpawnDistance = A.clamp(sandbox.MinSpawnDistance, 25, 90, d.minSpawnDistance)
-    s.offlineSpeedPercent = A.clamp(sandbox.OfflineSpeedPercent, 5, 100, d.offlineSpeedPercent)
+    s.offlineSpeedPercent = A.clamp(sandbox.OfflineSpeedPercent, 25, 800, d.offlineSpeedPercent)
     s.tripsPerCaravan = A.clamp(sandbox.TripsPerCaravan, 1, 10, d.tripsPerCaravan)
     s.haltSeconds = A.clamp(sandbox.HaltSeconds, 30, 600, d.haltSeconds)
     s.hornHails = sandbox.HornHails ~= false
     s.allowHostile = sandbox.AllowHostile ~= false
     s.allowRiders = sandbox.AllowRiders ~= false
     s.tradeEnabled = sandbox.TradeEnabled ~= false
+    s.escortContracts = sandbox.EscortContracts ~= false
+    s.ambushPercent = A.clamp(sandbox.AmbushPercent, 0, 100, d.ambushPercent)
+    s.radioChatter = sandbox.RadioChatter ~= false
+    s.abandonCars = sandbox.AbandonCars ~= false
+    s.markers = sandbox.Markers ~= false
     s.debug = sandbox.Debug == true
     return true
 end
@@ -186,6 +223,20 @@ function A.vehicleTag(vehicle)
     end)
     if ok and type(id) == "string" then return id, index end
     return nil
+end
+
+-- True when a player sits in the vehicle (riders): such a car is never removed.
+function A.vehicleHasPlayer(vehicle)
+    if vehicle == nil or type(instanceof) ~= "function" then return false end
+    local ok, found = pcall(function()
+        local seats = type(vehicle.getMaxPassengers) == "function" and vehicle:getMaxPassengers() or 0
+        for seat = 0, math.max(0, seats - 1) do
+            local character = vehicle:getCharacter(seat)
+            if character ~= nil and instanceof(character, "IsoPlayer") then return true end
+        end
+        return false
+    end)
+    return ok and found == true
 end
 
 function A.players()
@@ -224,8 +275,11 @@ function A.counters()
     local m = A.metrics
     return "founded=" .. m.founded .. " rendered=" .. m.rendered .. " refused=" .. m.renderRefused
         .. " released=" .. m.released .. " retired=" .. m.retired .. " legs=" .. m.legs .. " halts=" .. m.halts
-        .. " hails=" .. m.hails .. " trades=" .. m.trades .. " rides=" .. m.rides .. " tolls=" .. m.tolls
-        .. " fights=" .. m.fights .. " flights=" .. m.flights .. " lines=" .. m.lines .. " errors=" .. m.errors
+        .. " hails=" .. m.hails .. " trades=" .. m.trades .. " barters=" .. m.barters .. " rides=" .. m.rides
+        .. " tolls=" .. m.tolls .. " fights=" .. m.fights .. " flights=" .. m.flights .. " recrews=" .. m.recrews
+        .. " abandoned=" .. m.abandoned .. " unstuck=" .. m.unstuck .. " rescouts=" .. m.rescouts
+        .. " escorts=" .. m.escorts .. " ambushes=" .. m.ambushes .. " radio=" .. m.radio
+        .. " lines=" .. m.lines .. " errors=" .. m.errors
 end
 
 -- Console helper: ALifeCaravans.status()

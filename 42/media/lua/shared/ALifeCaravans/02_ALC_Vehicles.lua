@@ -213,12 +213,15 @@ function V.pick(class, fraction)
     return name
 end
 
--- Scripts for a caravan: the crew size decides how many cars (A-Life allows two).
+-- Scripts for a caravan: up to four cars (two A-Life arrival units). A military
+-- or police convoy fills the maximum; others take enough cars for the crew.
 function V.convoy(class, crewCount, maxVehicles)
     local scripts = {}
     local seatsTotal = 0
-    for index = 1, math.max(1, math.min(2, math.floor(tonumber(maxVehicles) or 2))) do
-        if index > 1 and seatsTotal >= crewCount then break end
+    local limit = math.max(1, math.min(4, math.floor(tonumber(maxVehicles) or 2)))
+    local fill = class == "military" or class == "police"
+    for index = 1, limit do
+        if index > 1 and not fill and seatsTotal >= crewCount then break end
         local name = V.pick(class, A.randFloat())
         if name == nil then break end
         scripts[#scripts + 1] = name

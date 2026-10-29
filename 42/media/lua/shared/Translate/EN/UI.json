@@ -3,5 +3,11 @@
     "UI_ALC_Opt_Menu": "Caravan menu on right-click",
     "UI_ALC_Opt_Menu_tt": "Show the [A-LIFE] Caravan entry in the right-click menu when a caravan car is within 18 tiles.",
     "UI_ALC_Opt_Notices": "Trade notices",
-    "UI_ALC_Opt_Notices_tt": "Show a short line over your head when you buy something from a caravan or pay a toll."
+    "UI_ALC_Opt_Notices_tt": "Show a short line over your head when you buy something from a caravan or pay a toll.",
+    "UI_ALC_Opt_WorldMap": "Caravans on the world map",
+    "UI_ALC_Opt_WorldMap_tt": "Draw every caravan (travelling in the ledger or on the road) on the world map (M): a square in the colour of its kind, a heading tick and the callsign.",
+    "UI_ALC_Opt_Minimap": "Caravans on the minimap",
+    "UI_ALC_Opt_Minimap_tt": "Small markers on the minimap.",
+    "UI_ALC_Opt_Labels": "Marker labels",
+    "UI_ALC_Opt_Labels_tt": "Show the callsign and kind next to the world map markers."
 }

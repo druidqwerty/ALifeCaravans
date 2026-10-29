@@ -1,0 +1,6 @@
+name=A-Life: Caravans live-test driver (test only)
+id=ALCTest
+require=ProjectALifeNPCs,ALifeCaravans
+loadModAfter=ProjectALifeNPCs,ALifeCaravans
+versionMin=42.21.0
+modversion=1

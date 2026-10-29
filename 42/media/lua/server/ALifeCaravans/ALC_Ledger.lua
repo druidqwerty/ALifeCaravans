@@ -1,39 +1,71 @@
 -- A-Life: Caravans - the caravan ledger (server / single player). Persistent
 -- through A-Life's own world store (Persistence.bucket) so caravans survive a
--- reload with their route, crew and cargo; falls back to global ModData.
+-- reload with their route, crew, stock and favor; falls back to global ModData.
+-- Schema 2 (0.2.0) migrates 0.1.0 ledgers in place.
 
 require "ALifeCaravans/00_ALC_Core"
+require "ALifeCaravans/05_ALC_Trade"
 
 local A = ALifeCaravans
 local Ledger = { store = nil, fallback = false }
 A.Ledger = Ledger
 
-local DEFAULTS = { schema = 1, caravans = {}, sequence = 0, nextFoundAtMs = 0 }
+local DEFAULTS = { schema = A.SCHEMA, caravans = {}, sequence = 0, nextFoundAtMs = 0, favor = {} }
+
+-- 0.1.0 -> 0.2.0: offers { item, name, price, stock } become stock rows
+-- { item, name, value, count }; new fields get their defaults.
+function Ledger.migrate(store)
+    local from = tonumber(store.schema) or 1
+    if from >= A.SCHEMA then return false end
+    for _, caravan in pairs(store.caravans or {}) do
+        if caravan.stock == nil then
+            local rows = {}
+            for _, offer in ipairs(caravan.offers or {}) do
+                rows[#rows + 1] = { item = offer.item, name = offer.name, value = tonumber(offer.price) or A.Trade.valueOf(offer.item),
+                    count = tonumber(offer.stock) or 1 }
+            end
+            caravan.stock = rows
+        end
+        caravan.offers = nil
+        caravan.trip = caravan.trip or 0
+        caravan.abandoned = caravan.abandoned or {}
+        caravan.units = caravan.units or 0
+        caravan.truce = caravan.truce or {}
+        if caravan.state == "rendering" or caravan.state == "rendered" or caravan.state == "fighting" then
+            -- cars of a previous session are gone after a reload; the director re-renders
+            caravan.state = "offline"
+            caravan.vehicleIds, caravan.actorUids = {}, {}
+        end
+    end
+    store.favor = store.favor or {}
+    store.schema = A.SCHEMA
+    A.log("ledger migrated from schema", from, "to", A.SCHEMA)
+    return true
+end
 
 function Ledger.open()
     if Ledger.store ~= nil then return Ledger.store end
     local persistence = ProjectALife and ProjectALife.Persistence
-    if persistence ~= nil and type(persistence.bucket) == "function" then
-        local ok, store = pcall(persistence.bucket, "alc_caravans", A.copy(DEFAULTS))
-        if ok and type(store) == "table" then
-            store.caravans = type(store.caravans) == "table" and store.caravans or {}
-            store.sequence = tonumber(store.sequence) or 0
-            Ledger.store = store
-            return store
-        end
-        A.fail("ledger bucket", store)
-    end
     local store
-    if type(ModData) == "table" and type(ModData.getOrCreate) == "function" then
-        local ok, data = pcall(ModData.getOrCreate, "ALifeCaravans.v1")
-        if ok and type(data) == "table" then store = data end
+    if persistence ~= nil and type(persistence.bucket) == "function" then
+        local ok, bucket = pcall(persistence.bucket, "alc_caravans", A.copy(DEFAULTS))
+        if ok and type(bucket) == "table" then store = bucket else A.fail("ledger bucket", bucket) end
     end
-    store = store or {}
+    if store == nil then
+        if type(ModData) == "table" and type(ModData.getOrCreate) == "function" then
+            local ok, data = pcall(ModData.getOrCreate, "ALifeCaravans.v1")
+            if ok and type(data) == "table" then store = data end
+        end
+        store = store or {}
+        Ledger.fallback = true
+    end
     for key, value in pairs(DEFAULTS) do
         if store[key] == nil then store[key] = A.copy(value) end
     end
+    store.caravans = type(store.caravans) == "table" and store.caravans or {}
+    store.sequence = tonumber(store.sequence) or 0
     Ledger.store = store
-    Ledger.fallback = true
+    if Ledger.migrate(store) then Ledger.touch() end
     return store
 end
 
@@ -100,11 +132,30 @@ function Ledger.byActor(uid)
     return nil
 end
 
+-- Favor of a player with a faction (-10..10), earned by fair trades and escorts.
+function Ledger.favor(playerKey, factionId)
+    local store = Ledger.open()
+    local row = store.favor[tostring(playerKey)]
+    return row and tonumber(row[tostring(factionId)]) or 0
+end
+
+function Ledger.addFavor(playerKey, factionId, delta)
+    local store = Ledger.open()
+    local key = tostring(playerKey)
+    store.favor[key] = store.favor[key] or {}
+    local value = math.max(-10, math.min(10, (tonumber(store.favor[key][tostring(factionId)]) or 0) + (tonumber(delta) or 0)))
+    store.favor[key][tostring(factionId)] = value
+    Ledger.touch()
+    return value
+end
+
 function Ledger.reset()
     local store = Ledger.open()
     store.caravans = {}
     store.sequence = 0
     store.nextFoundAtMs = 0
+    store.favor = {}
+    store.schema = A.SCHEMA
     Ledger.touch()
 end
 

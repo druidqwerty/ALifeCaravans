@@ -2,12 +2,17 @@
 -- A caravan near a player becomes real through A-Life's own "arrive by car"
 -- pipeline (DebugService.rawSpawn with arrival="ground" -> VehicleArrivals):
 -- A-Life creates the cars, spawns the crew straight into the seats, hands the
--- car to a driving session (and, in multiplayer, to the nearest client). Four
--- small hooks make that pipeline ours while one of our requests is in flight:
+-- car to a driving session (and, in multiplayer, to the nearest client). The
+-- pipeline makes at most two cars per request, so a convoy of three or four
+-- cars is rendered in two "units", the second one behind the first.
+-- Four small hooks make the pipeline ours while one of our requests is in flight:
 --   VehicleArrivalSites.find      -> our road site on the caravan's route and our waypoints
 --   VehicleArrivalVehicle.create  -> our vehicle script per car, car tagged with the caravan id
 --   DrivingLifecycle.create       -> convoy cruising speed
 --   VehicleArrivals.fallback/finished -> no "walk to the objective after five minutes"
+-- Re-crewing (a dead driver, crews back into the cars after a fight) creates a
+-- boarding session the same way A-Life does for its own crews: directly on the
+-- driving side in single player, suspended with a hand-off in multiplayer.
 
 require "ALifeCaravans/00_ALC_Core"
 require "ALifeCaravans/02_ALC_Vehicles"
@@ -15,7 +20,7 @@ require "ALifeCaravans/03_ALC_Roads"
 require "ALifeCaravans/04_ALC_Convoy"
 
 local A = ALifeCaravans
-local S = { pending = nil, installed = false, serial = 0, lastReason = nil }
+local S = { pending = nil, installed = false, serial = 0, lastReason = nil, recrewSerial = 0 }
 A.Spawn = S
 
 local function P() return ProjectALife end
@@ -60,12 +65,18 @@ function S.install()
             local car, seats = original(site, requestId)
             V.script = previous
             if car ~= nil then
-                A.tagVehicle(car, pending.caravan.id, pending.carIndex)
+                -- A-Life fills a car before it creates the next one; handing back
+                -- fewer usable seats spreads the crew over the convoy's cars.
+                local wanted = pending.perCar and pending.perCar[pending.carIndex] or nil
+                if type(seats) == "table" and wanted ~= nil and #seats > wanted then
+                    local trimmed = {}
+                    for index = 1, math.max(1, wanted) do trimmed[index] = seats[index] end
+                    seats = trimmed
+                end
+                A.tagVehicle(car, pending.caravan.id, (pending.indexBase or 0) + pending.carIndex)
                 local ok, id = pcall(function() return car:getId() end)
                 if ok then pending.cars[#pending.cars + 1] = id end
-                pcall(function()
-                    car:setHeadlightsOn(p.VehicleArrivalVehicle.night())
-                end)
+                pcall(function() car:setHeadlightsOn(p.VehicleArrivalVehicle.night()) end)
             else
                 S.lastReason = seats
             end
@@ -86,6 +97,7 @@ function S.install()
                 end
                 old.speedKmh = kmh
                 old.cruiseSpeed = kmh / 3.6
+                old.systemArrival = true
             end
             return original(owner, old, car, crew, token, route, boarding)
         end
@@ -140,51 +152,124 @@ local function playersXY(players)
     return out
 end
 
--- Try to put the caravan on the road near its ledger position. Returns true
+-- Scripts and crew of a render unit (1: cars 1-2, 2: cars 3-4). The crew is
+-- shared between the units in proportion to their seats, at least a driver per car.
+function S.unitPlan(caravan, unit)
+    local scripts, crew = {}, {}
+    local all = {}
+    for _, name in ipairs(caravan.vehicles or {}) do
+        if A.Vehicles.valid(name) then all[#all + 1] = name end
+    end
+    local first = unit == 2 and 3 or 1
+    for index = first, math.min(#all, first + 1) do scripts[#scripts + 1] = all[index] end
+    local unitSeats, totalSeats, unit1Seats = 0, 0, 0
+    for index, name in ipairs(all) do
+        local n = A.Vehicles.seats(name)
+        totalSeats = totalSeats + n
+        if index <= 2 then unit1Seats = unit1Seats + n end
+    end
+    for _, name in ipairs(scripts) do unitSeats = unitSeats + A.Vehicles.seats(name) end
+    local total = #(caravan.crew or {})
+    local unit1Cars = math.min(2, #all)
+    local unit1Crew = total
+    if #all > 2 then
+        unit1Crew = math.floor(total * unit1Seats / math.max(1, totalSeats))
+        unit1Crew = math.max(unit1Cars, math.min(unit1Crew, total - (#all - unit1Cars), unit1Seats, 8))
+    end
+    local from, to
+    if unit == 1 then from, to = 1, unit1Crew else from, to = unit1Crew + 1, total end
+    for index = from, math.min(to, total) do
+        if #crew < math.min(8, unitSeats) then crew[#crew + 1] = caravan.crew[index] end
+    end
+    -- crew per car inside the unit: half and half, at least a driver each
+    local perCar = {}
+    if #scripts >= 2 and #crew >= 2 then
+        local seats1, seats2 = A.Vehicles.seats(scripts[1]), A.Vehicles.seats(scripts[2])
+        local c1 = math.min(seats1, math.ceil(#crew / 2))
+        local c2 = math.min(seats2, #crew - c1)
+        if c2 < 1 then c1, c2 = #crew - 1, 1 end
+        while #crew > c1 + c2 do table.remove(crew) end
+        perCar = { c1, c2 }
+    elseif #scripts >= 1 then
+        local seats1 = A.Vehicles.seats(scripts[1])
+        while #crew > seats1 do table.remove(crew) end
+        perCar = { #crew }
+    end
+    return scripts, crew, unitSeats, perCar
+end
+
+-- Try to put a render unit of the caravan on the road. Unit 1 starts near the
+-- ledger position; unit 2 starts behind the last car of unit 1. Returns true
 -- when A-Life accepted the crew request (the outcome arrives through watchGroup).
-function S.render(caravan, player, players)
+function S.render(caravan, player, players, unit)
+    unit = unit or 1
     local p = P()
     local ok, reason = S.ready()
     if not ok then return false, reason end
     if not S.installed and not S.install() then return false, "hooks_not_installed" end
-    local scene = A.Roads.scene(player)
-    local people = playersXY(players)
-    local goal = caravan.goals and caravan.goals[caravan.goalIndex or 1] or nil
-    if goal == nil then return false, "no_goal" end
-    local site, why = A.Roads.siteNear(scene, caravan.x, caravan.y, people, { radius = 36, minPlayer = A.settings.minSpawnDistance })
-    if site == nil then return false, why end
-    local points, info = A.Roads.scout(scene, site, goal, { maxPoints = 10 })
-    if #points == 0 then return false, info.reason or "no_road" end
-    local scripts = {}
-    for _, name in ipairs(caravan.vehicles or {}) do
-        if A.Vehicles.valid(name) then scripts[#scripts + 1] = name end
-    end
+    local scripts, crew, _, perCar = S.unitPlan(caravan, unit)
     if #scripts == 0 then
-        local name = A.Vehicles.pick(caravan.vehicleClass or "civilian", A.randFloat())
+        if unit == 2 then return false, "no_unit_2" end
+        local name = A.Vehicles.pick(caravan.class or "civilian", A.randFloat())
         if name == nil then return false, "no_vehicle_script" end
-        scripts[1] = name
         caravan.vehicles = { name }
-    end
-    local sites = { { x = site.x, y = site.y, z = 0, route = points } }
-    local seats = A.Vehicles.seats(scripts[1])
-    if #scripts > 1 then
-        local behind = A.Roads.behind(scene, site, points[1], 9, people, A.settings.minSpawnDistance)
-        if behind ~= nil then
-            local route = { { x = site.x, y = site.y } }
-            for _, point in ipairs(points) do route[#route + 1] = { x = point.x, y = point.y } end
-            sites[2] = { x = behind.x, y = behind.y, z = 0, route = route }
-            seats = seats + A.Vehicles.seats(scripts[2])
-        else
-            scripts = { scripts[1] }
-        end
-    end
-    local crew = {}
-    local limit = math.max(1, math.min(8, seats - (caravan.renderFailures or 0)))
-    for index, profileId in ipairs(caravan.crew or {}) do
-        if index > limit then break end
-        crew[#crew + 1] = profileId
+        scripts, crew, _, perCar = S.unitPlan(caravan, unit)
     end
     if #crew == 0 then return false, "no_crew" end
+    local scene = A.Roads.scene(player)
+    local people = playersXY(players)
+    local sites, points
+    if unit == 1 then
+        local goal = caravan.goals and caravan.goals[caravan.goalIndex or 1] or nil
+        if goal == nil then return false, "no_goal" end
+        local site, why = A.Roads.siteNear(scene, caravan.x, caravan.y, people, { radius = 36, minPlayer = A.settings.minSpawnDistance })
+        if site == nil then return false, why end
+        local info
+        points, info = A.Roads.scout(scene, site, goal, { maxPoints = 10 })
+        if #points == 0 then return false, info.reason or "no_road" end
+        sites = { { x = site.x, y = site.y, z = 0, route = points } }
+        if #scripts > 1 then
+            local behind = A.Roads.behind(scene, site, points[1], 9, people, A.settings.minSpawnDistance)
+            if behind ~= nil then
+                local route = { { x = site.x, y = site.y } }
+                for _, point in ipairs(points) do route[#route + 1] = { x = point.x, y = point.y } end
+                sites[2] = { x = behind.x, y = behind.y, z = 0, route = route }
+            else
+                scripts = { scripts[1] }
+            end
+        end
+        caravan.legPoints = points
+        caravan.leadSite = { x = site.x, y = site.y }
+    else
+        local tailId = caravan.vehicleIds[#caravan.vehicleIds]
+        local tail = tailId ~= nil and getVehicleById(tailId) or nil
+        local tx, ty = A.xyz(tail)
+        if tx == nil then return false, "no_tail_car" end
+        local ahead = caravan.legPoints and caravan.legPoints[1] or caravan.leadSite or { x = tx + 1, y = ty }
+        local tailSite = { x = math.floor(tx) + 0.5, y = math.floor(ty) + 0.5 }
+        local first = A.Roads.behind(scene, tailSite, ahead, 10, people, 0)
+        if first == nil then return false, "no_room_behind" end
+        local route = {}
+        for _, point in ipairs(caravan.legPoints or {}) do route[#route + 1] = { x = point.x, y = point.y } end
+        if #route == 0 then route[1] = { x = ahead.x, y = ahead.y } end
+        sites = { { x = first.x, y = first.y, z = 0, route = route } }
+        if #scripts > 1 then
+            local second = A.Roads.behind(scene, first, tailSite, 9, people, 0)
+            if second ~= nil then
+                local route2 = { { x = first.x, y = first.y } }
+                for _, point in ipairs(route) do route2[#route2 + 1] = { x = point.x, y = point.y } end
+                sites[2] = { x = second.x, y = second.y, z = 0, route = route2 }
+            else
+                scripts = { scripts[1] }
+            end
+        end
+        points = sites[1].route
+    end
+    local seatsNow = 0
+    for _, name in ipairs(scripts) do seatsNow = seatsNow + A.Vehicles.seats(name) end
+    local limit = math.max(1, math.min(8, seatsNow - (caravan.renderFailures or 0)))
+    while #crew > limit do table.remove(crew) end
+    if #scripts == 1 then perCar = { #crew } end
     local last = points[#points]
     S.serial = S.serial + 1
     local requestId = "alc:" .. tostring(caravan.id) .. ":" .. tostring(S.serial)
@@ -193,7 +278,7 @@ function S.render(caravan, player, players)
         profileIds = crew,
         count = #crew,
         factionId = caravan.factionId,
-        x = site.x, y = site.y, z = 0,
+        x = sites[1].x, y = sites[1].y, z = 0,
         mode = "patrol", radius = 12, distance = 0, separation = 1,
         arrival = "ground",
         objectiveX = last.x, objectiveY = last.y,
@@ -206,7 +291,7 @@ function S.render(caravan, player, players)
         animation = "normal",
         conducts = { "leader" },
     }
-    S.pending = { caravan = caravan, sites = sites, scripts = scripts, cars = {} }
+    S.pending = { caravan = caravan, sites = sites, scripts = scripts, cars = {}, perCar = perCar, indexBase = unit == 2 and #caravan.vehicleIds or 0 }
     local okCall, result = pcall(p.DebugService.rawSpawn, player, args, true)
     local pending = S.pending
     S.pending = nil
@@ -220,14 +305,14 @@ function S.render(caravan, player, players)
         return false, tostring(why or "spawn_refused") .. (S.lastReason and (" (" .. tostring(S.lastReason) .. ")") or "")
     end
     caravan.requestId = requestId
-    caravan.vehicleIds = pending.cars
-    caravan.vehicles = scripts
-    caravan.route_points = nil
-    caravan.site = { x = site.x, y = site.y }
+    caravan.vehicleIds = caravan.vehicleIds or {}
+    if unit == 1 then caravan.vehicleIds = {} end
+    for _, id in ipairs(pending.cars) do caravan.vehicleIds[#caravan.vehicleIds + 1] = id end
+    caravan.site = { x = sites[1].x, y = sites[1].y }
     if type(p.DebugService.watchGroup) == "function" then
         p.DebugService.watchGroup(requestId, function(outcome)
             if A.Director ~= nil and type(A.Director.onSpawnOutcome) == "function" then
-                local okOutcome, err = pcall(A.Director.onSpawnOutcome, caravan.id, outcome)
+                local okOutcome, err = pcall(A.Director.onSpawnOutcome, caravan.id, outcome, unit)
                 if not okOutcome then A.fail("spawn outcome", err) end
             end
         end)
@@ -279,7 +364,7 @@ function S.teardownVehicles(ids)
     for _, id in ipairs(ids or {}) do
         S.releaseCar(id)
         local car = type(getVehicleById) == "function" and getVehicleById(id) or nil
-        if car ~= nil and p ~= nil and p.VehicleArrivalVehicle ~= nil then
+        if car ~= nil and p ~= nil and p.VehicleArrivalVehicle ~= nil and not A.vehicleHasPlayer(car) then
             local ok, removed = pcall(p.VehicleArrivalVehicle.remove, car)
             if not ok then A.fail("vehicle remove", removed) end
         end
@@ -302,7 +387,7 @@ function S.teardownActors(uids, reason)
 end
 
 -- Take a caravan off the road: crew back into the ledger, cars gone. A car with
--- a player inside stays in the world (returned in `kept`).
+-- a player inside stays in the world (returned in `kept`); abandoned cars stay.
 function S.teardown(caravan, reason)
     local kept = {}
     S.teardownActors(caravan.actorUids, reason or "alc_release")
@@ -311,12 +396,18 @@ function S.teardown(caravan, reason)
         S.releaseCar(id)
         local car = type(getVehicleById) == "function" and getVehicleById(id) or nil
         if car ~= nil and p ~= nil and p.VehicleArrivalVehicle ~= nil then
-            local ok, removed = pcall(p.VehicleArrivalVehicle.remove, car)
-            if not ok or removed == false then kept[#kept + 1] = id end
+            if A.vehicleHasPlayer(car) then
+                kept[#kept + 1] = id
+            else
+                local ok, removed = pcall(p.VehicleArrivalVehicle.remove, car)
+                if not ok or removed == false then kept[#kept + 1] = id end
+            end
         end
     end
+    for _, id in ipairs(caravan.abandoned or {}) do S.releaseCar(id) end
     caravan.actorUids = {}
     caravan.vehicleIds = {}
+    caravan.abandoned = {}
     caravan.requestId = nil
     return kept
 end
@@ -363,6 +454,211 @@ function S.setRiders(caravan, allowed)
         end
         if p ~= nil and p.DrivingMultiplayer ~= nil then p.DrivingMultiplayer.broadcastAt = 0 end
     end
+end
+
+-- Living crew of the caravan with a body near (x, y), as { uid, generation, shell } rows.
+function S.survivors(caravan, x, y, radius)
+    local p = P()
+    local registry = p and p.ActorRegistry
+    local demo = p and p.DrivingDemo
+    local out = {}
+    if registry == nil or demo == nil then return out end
+    for _, uid in ipairs(caravan.actorUids or {}) do
+        local ok, actor = pcall(registry.read, uid)
+        if ok and actor ~= nil and actor.lifecycle == "active" then
+            local okNpc, npc = pcall(demo.findNpc, uid, actor.generation)
+            local nx, ny
+            if okNpc then nx, ny = A.xyz(npc) end
+            local dead = true
+            pcall(function() dead = npc:isDead() end)
+            if nx ~= nil and not dead and A.dist(nx, ny, x, y) <= (radius or 40) then
+                out[#out + 1] = { uid = uid, generation = actor.generation, npc = npc, inCar = nil }
+                pcall(function() out[#out].inCar = npc:getVehicle() end)
+            end
+        end
+    end
+    return out
+end
+
+-- Put a crew back into a car: the survivors walk to the car, board it (a new
+-- driver on seat 0) and drive the caravan's route on. `limit` caps the crew of
+-- this car so the survivors are shared between the cars being re-crewed.
+-- Returns true when the boarding session was created.
+function S.recrew(caravan, vehicleId, route, limit)
+    local p = P()
+    local car = type(getVehicleById) == "function" and getVehicleById(vehicleId) or nil
+    if car == nil or p == nil or p.DrivingLifecycle == nil or p.DrivingTuning == nil then return false, "no_car" end
+    local cx, cy = A.xyz(car)
+    if cx == nil then return false, "no_position" end
+    local candidates = S.survivors(caravan, cx, cy, 40)
+    -- crew already seated in another caravan car stays there
+    local free = {}
+    for _, row in ipairs(candidates) do
+        local other = row.inCar
+        if other == nil or other == car then free[#free + 1] = row end
+    end
+    if #free == 0 then return false, "no_survivors" end
+    local seats = {}
+    pcall(function()
+        for seat = 0, math.min(15, car:getMaxPassengers() - 1) do
+            if car:isSeatInstalled(seat) and (car:getCharacter(seat) == nil or not instanceof(car:getCharacter(seat), "IsoPlayer")) then
+                seats[#seats + 1] = seat
+            end
+        end
+    end)
+    if seats[1] ~= 0 then return false, "no_driver_seat" end
+    local crew = {}
+    local cap = math.max(1, math.min(#seats, math.floor(tonumber(limit) or #seats)))
+    for index, row in ipairs(free) do
+        if index > cap then break end
+        crew[#crew + 1] = { uid = row.uid, generation = row.generation, seat = seats[index] }
+    end
+    S.releaseCar(vehicleId)
+    local owner = p.VehicleArrivals.owner()
+    if owner == nil then return false, "no_owner" end
+    local player = A.players()[1]
+    if type(getSpecificPlayer) == "function" and not (type(isServer) == "function" and isServer()) then
+        local ok, local0 = pcall(getSpecificPlayer, 0)
+        if ok and local0 ~= nil then player = local0 end
+    elseif #A.players() > 1 then
+        local best, bestD = player, math.huge
+        for _, candidate in ipairs(A.players()) do
+            local px, py = A.xyz(candidate)
+            local d = px and A.dist(px, py, cx, cy) or math.huge
+            if d < bestD then best, bestD = candidate, d end
+        end
+        player = best
+    end
+    if player == nil then return false, "no_player" end
+    local points = {}
+    for _, point in ipairs(route or caravan.legPoints or {}) do points[#points + 1] = { x = point.x, y = point.y } end
+    if #points == 0 then
+        local goal = caravan.goals and caravan.goals[caravan.goalIndex or 1] or nil
+        if goal ~= nil then points[1] = { x = goal.x, y = goal.y } end
+    end
+    if #points == 0 then return false, "no_route" end
+    local T = p.DrivingTuning
+    local tuning = T.copy()
+    tuning.speedKmh = caravan.speedKmh
+    S.recrewSerial = S.recrewSerial + 1
+    local token = "alc-recrew:" .. tostring(vehicleId) .. ":" .. tostring(S.recrewSerial)
+    local old = { player = player, systemArrival = true, tuning = tuning, speedKmh = caravan.speedKmh, cruiseSpeed = caravan.speedKmh / 3.6,
+        route = points, boardingDepart = true, onWaypointReached = not (type(isServer) == "function" and isServer()) and owner.waypointReached or nil }
+    local binding = { vehicleId = vehicleId, player = player, crew = crew, revision = ((owner.bindings[vehicleId] and owner.bindings[vehicleId].revision) or 0) + 1,
+        status = "Caravan crew boarding." }
+    owner.bindings[vehicleId] = binding
+    if type(p.DrivingFleet.rememberVehicle) == "function" then pcall(p.DrivingFleet.rememberVehicle, binding, car) end
+    owner.tunings = owner.tunings or {}
+    owner.allowRiders = owner.allowRiders or {}
+    owner.carModes = owner.carModes or {}
+    owner.tunings[vehicleId] = tuning
+    owner.allowRiders[vehicleId] = false
+    owner.carModes[vehicleId] = "npc"
+    p.VehicleArrivals.active[vehicleId] = car
+    p.VehicleArrivals.journeys[vehicleId] = { deadline = A.now() + 86400000, player = player, target = { x = points[#points].x, y = points[#points].y } }
+    local ok, s, why = pcall(p.DrivingLifecycle.create, owner, old, car, crew, token, points, true)
+    if not ok then return false, "create_error:" .. tostring(s) end
+    if s == nil then return false, tostring(why or "create_refused") end
+    if type(isServer) == "function" and isServer() then
+        local L = p.DrivingLifecycle
+        local record = L.suspend(owner, s, false)
+        if record == nil then
+            S.releaseCar(vehicleId)
+            return false, "suspend_refused"
+        end
+        record.resume, record.handoff = true, true
+    else
+        owner.departures = owner.departures or {}
+        owner.departures[vehicleId] = { revision = binding.revision, options = { route = points, speedKmh = caravan.speedKmh } }
+    end
+    if p.DrivingMultiplayer ~= nil then p.DrivingMultiplayer.broadcastAt = 0 end
+    A.metrics.recrews = A.metrics.recrews + 1
+    return true, #crew
+end
+
+-- Leave a car behind (out of fuel, engine dead, nobody to drive it): its crew
+-- gets out and stays with the caravan on foot until the ledger takes them back.
+function S.abandon(caravan, vehicleId)
+    local p = P()
+    local owner, s = S.sessionOf(vehicleId)
+    if s ~= nil and p ~= nil and p.DrivingDemo ~= nil then pcall(p.DrivingDemo.release, s) end
+    S.releaseCar(vehicleId)
+    for index = #(caravan.vehicleIds or {}), 1, -1 do
+        if caravan.vehicleIds[index] == vehicleId then table.remove(caravan.vehicleIds, index) end
+    end
+    caravan.abandoned = caravan.abandoned or {}
+    caravan.abandoned[#caravan.abandoned + 1] = vehicleId
+    A.metrics.abandoned = A.metrics.abandoned + 1
+    pcall(function()
+        local car = getVehicleById(vehicleId)
+        if car ~= nil then
+            car:setHeadlightsOn(false)
+            if car:isEngineRunning() and car:getDriver() == nil then car:shutOff() end
+        end
+    end)
+    return true
+end
+
+-- Fuel and engine of a car, for the abandonment rule.
+function S.carHealth(car)
+    local fuel, engine = 1, true
+    pcall(function()
+        local tank = car:getPartById("GasTank")
+        if tank ~= nil then fuel = tank:getContainerContentAmount() end
+    end)
+    pcall(function() engine = car:isEngineWorking() end)
+    return fuel, engine
+end
+
+-- Zombies (not A-Life NPCs) within `radius` of (x, y).
+function S.zombiesNear(x, y, radius)
+    local count = 0
+    pcall(function()
+        local list = getCell():getZombieList()
+        for index = 0, list:size() - 1 do
+            local zombie = list:get(index)
+            local zx, zy = A.xyz(zombie)
+            if zx ~= nil and not zombie:isDead() and A.dist(zx, zy, x, y) <= radius then
+                local data = zombie:getModData()
+                if not (data and data.ProjectALifeOwned == true) then count = count + 1 end
+            end
+        end
+    end)
+    return count
+end
+
+-- An ambush ahead of the convoy: a horde on the road, or raiders of an outlaw faction.
+function S.ambush(caravan, kind, x, y, player)
+    local p = P()
+    if kind == "raiders" then
+        local rules = p and p.FactionSpawnRules
+        local catalog = p and p.Catalog and p.Catalog.current
+        local outlaw
+        for _, faction in ipairs(catalog and catalog.factionOrder or {}) do
+            if rules ~= nil and type(rules.outlaw) == "function" and rules.outlaw(faction) and faction.id ~= caravan.factionId
+                    and faction.spawn ~= nil and faction.spawn.enabled ~= false then
+                outlaw = faction
+                if A.rand(3) == 0 then break end
+            end
+        end
+        if outlaw == nil or p.DebugService == nil then return false, "no_outlaw_faction" end
+        S.serial = S.serial + 1
+        local ok, result = pcall(p.DebugService.rawSpawn, player, {
+            requestId = "alc-ambush:" .. tostring(caravan.id) .. ":" .. tostring(S.serial),
+            factionId = outlaw.id, count = 3 + A.rand(2), x = x, y = y, z = 0,
+            mode = "assault", radius = 10, distance = 0, separation = 2, atomicGroup = false,
+            encounterId = "alc_ambush", encounterPersistent = false, supportPolicy = "disabled", playerKeepOut = 0,
+            objectiveX = caravan.x, objectiveY = caravan.y, animation = "normal",
+        }, true)
+        if not ok or type(result) ~= "table" or result.ok ~= true then
+            return false, tostring(ok and (result and result.reason) or result)
+        end
+        return true
+    end
+    local count = 8 + A.rand(7)
+    local ok, err = pcall(function() spawnHorde(x - 4, y - 4, x + 4, y + 4, 0, count) end)
+    if not ok then return false, tostring(err) end
+    return true
 end
 
 return S

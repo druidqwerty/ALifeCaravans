@@ -1,11 +1,13 @@
 """Run the lupa simulation tests of A-Life: Caravans. Exit 1 on any failure.
 
 tools/test_alc.lua - stubs Project A-Life (driving sessions, vehicle arrivals, catalog, road graph, registry,
-speech) and the game (cell with a synthetic road, vehicles, scripts, players, events, commands), loads the mod
-in single-player mode, and checks: boot and hooks, sandbox settings, vehicle choice, road scouting, founding,
-offline travel, rendering through the arrival pipeline, route extension and restart on the driving side, halt
-and resume, release and retirement, every interaction (hail, horn, news, trade, ride, wait, farewell, threaten,
-toll, attack reaction), the client menu and trade execution, and that every speech line exists in EN and RU.
+speech, radio) and the game (cell with a synthetic road, vehicles with seats/fuel/engine, scripts, players,
+events, commands, map UI), loads the mod in single-player mode, and checks: boot and hooks, the 0.1.0 ledger
+migration, sandbox settings, vehicle choice, road scouting, the barter rules, founding (named leaders, stock,
+ambush), fast ledger travel with easing, map markers, a four-car convoy rendered in two units, formation speeds,
+route extension and restart, stuck recovery, hail/news/deals/ride/wait/escort/farewell, threaten (fold+flee /
+fight), attack reactions, driver death and re-crewing, car abandonment, ambushes, radio chatter, riders and
+release, the raider toll, the client menu and headlight-flash hails, and that every speech line exists in EN and RU.
 Also compiles every Lua file and checks the JSON translations decode as UTF-8 with identical key sets.
 """
 import glob

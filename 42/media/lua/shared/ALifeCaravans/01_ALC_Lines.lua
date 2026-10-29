@@ -1,7 +1,8 @@
 -- A-Life: Caravans - speech lines. Texts live in shared/Translate/<lang>/IG_UI.json
 -- as IGUI_ALC_<situation>_<n>; a situation picks one of its `count` lines at random
--- and fills {dest}, {town}, {faction}, {item}, {price} variables. Lines are shown
--- through A-Life's own Speech.say (same bubble, same multiplayer mirroring).
+-- and fills {dest}, {town}, {faction}, {item}, {price}, {name}, {leader} variables.
+-- Lines are shown through A-Life's own Speech.say (same bubble, same multiplayer
+-- mirroring). Radio lines (radio_<n>) go to A-Life's Knox County Radio.
 
 require "ALifeCaravans/00_ALC_Core"
 
@@ -21,6 +22,7 @@ L.catalog = {
     trade_none = { count = 2 },
     trade_broke = { count = 2 },
     trade_sold = { count = 1 },
+    trade_refuse = { count = 2 },
     ride_ok = { count = 2 },
     ride_refuse = { count = 2 },
     ride_full = { count = 1 },
@@ -37,7 +39,21 @@ L.catalog = {
     attacked = { count = 2 },
     flee = { count = 2 },
     arrive = { count = 2 },
+    arrive_riders = { count = 2 },
     passing = { count = 3 },
+    escort_ok = { count = 2 },
+    escort_refuse = { count = 2 },
+    escort_done = { count = 2 },
+    escort_void = { count = 2 },
+    escort_busy = { count = 1 },
+    ambush_zombies = { count = 2 },
+    ambush_raiders = { count = 2 },
+    ambush_clear = { count = 2 },
+    regroup = { count = 2 },
+    driver_down = { count = 2 },
+    abandon = { count = 2 },
+    stuck = { count = 2 },
+    radio = { count = 4 },
 }
 
 -- Every translation key the catalog needs (for the tests and the status).

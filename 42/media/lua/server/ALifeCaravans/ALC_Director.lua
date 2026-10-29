@@ -1,23 +1,31 @@
 -- A-Life: Caravans - the director (server / single player). Founds caravans in
 -- towns of A-Life's road graph, moves them along town-to-town routes while no
--- player is near ("offline"), puts them on the road through ALC_Spawn when a
--- player comes within the render radius, follows them while they drive, and
--- takes them back into the ledger when every player is far away.
+-- player is near ("ledger": fast far away, slowing to the cruising speed as a
+-- player comes close so nothing pops), puts them on the road through ALC_Spawn
+-- when a player comes within the render radius (two units for 3-4 cars),
+-- follows them while they drive (re-crews a car after its driver died, leaves
+-- cars without fuel or engine behind, releases a stuck caravan only out of
+-- sight), runs escorts, ambushes and radio chatter, and takes them back into
+-- the ledger when every player is far away.
 
 require "ALifeCaravans/00_ALC_Core"
 require "ALifeCaravans/01_ALC_Lines"
 require "ALifeCaravans/02_ALC_Vehicles"
 require "ALifeCaravans/03_ALC_Roads"
 require "ALifeCaravans/04_ALC_Convoy"
+require "ALifeCaravans/05_ALC_Trade"
 require "ALifeCaravans/ALC_Ledger"
 require "ALifeCaravans/ALC_Spawn"
 
 local A = ALifeCaravans
 local D = { nextTickMs = 0, intervalMs = 2000, lastTickMs = nil, renderCooldownUntilMs = 0, publishAtMs = 0,
-    publishDirty = false, maxRendered = 2, goalSpacing = 55 }
+    publishDirty = false, maxRendered = 2, maxCars = 7, goalSpacing = 55, radioAtMs = 0, radioEveryMs = 300000,
+    arrivalPauseSeconds = 60, escortRadius = 70, escortGraceMs = 60000, ambushLead = 60, outOfSight = 60 }
 A.Director = D
 
 local KIND_BY_CLASS = { military = "convoy", police = "patrol", rescue = "rescue", trade = "trade", raider = "raid", civilian = "trade" }
+D.callsigns = { "Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "Kilo", "Lima", "Mike",
+    "November", "Oscar", "Papa", "Romeo", "Sierra", "Tango", "Victor", "Whiskey", "Yankee", "Zulu" }
 
 local function P() return ProjectALife end
 
@@ -25,8 +33,8 @@ function D.graph()
     local p = P()
     local G = p and p.RoadGraph or nil
     if G == nil or type(G.nodes) ~= "table" then return nil end
-    if next(G.nodes) == nil and type(G.importShipped) == "function" then pcall(G.importShipped) end
-    if next(G.nodes) == nil then return nil end
+    if A.isEmpty(G.nodes) and type(G.importShipped) == "function" then pcall(G.importShipped) end
+    if A.isEmpty(G.nodes) then return nil end
     return G
 end
 
@@ -61,6 +69,11 @@ local function nearestPlayer(rows, x, y)
         if d < bestD then best, bestD = row, d end
     end
     return best, bestD
+end
+
+local function playerByKey(rows, key)
+    for _, row in ipairs(rows) do if row.key == key then return row end end
+    return nil
 end
 
 function D.nodeName(G, id)
@@ -143,6 +156,23 @@ function D.crewFor(catalog, faction, count)
     return crew
 end
 
+-- A persistent leader: the first crew profile's name and a convoy callsign.
+function D.leaderFor(catalog, crew, seed)
+    local p = P()
+    local name = "Leader"
+    local profile = nil
+    if p and p.Catalog and type(p.Catalog.npc) == "function" and crew[1] then
+        local ok, found = pcall(p.Catalog.npc, crew[1])
+        if ok then profile = found end
+    end
+    if profile ~= nil and profile.general and type(profile.general.name) == "string" and profile.general.name ~= "" then
+        name = profile.general.name
+    end
+    local hash = A.hash(tostring(seed) .. tostring(crew[1]))
+    local callsign = D.callsigns[hash % #D.callsigns + 1] .. "-" .. tostring(hash % 9 + 1)
+    return name, callsign
+end
+
 -- A route of 2-4 edges from `fromId`, no node twice.
 function D.planRoute(G, fromId, edges)
     local route, seen = { fromId }, { [fromId] = true }
@@ -216,11 +246,33 @@ function D.offlinePosition(G, caravan)
     return D.interpolate(G, route[leg], route[leg + 1], caravan.t or 0)
 end
 
+-- Heading of the ledger travel (radians) for the map markers.
+function D.heading(G, caravan)
+    local route = caravan.route or {}
+    local leg = caravan.leg or 1
+    local na, nb = G.nodes[route[leg]], G.nodes[route[leg + 1]]
+    if na == nil or nb == nil then return 0 end
+    return A.atan2(nb.y - na.y, nb.x - na.x)
+end
+
+-- Ledger speed multiplier: the full offline percentage far away, easing down to
+-- the cruising speed (1.0) within the render radius so a caravan a player
+-- approaches does not jump.
+function D.speedFactor(distance)
+    local radius = A.settings.renderRadius
+    local far = A.settings.offlineSpeedPercent / 100
+    if distance == nil or distance == math.huge then return far end
+    if distance <= radius then return 1 end
+    return A.lerp(1, far, (distance - radius) / (radius * 1.5))
+end
+
 -- Advance the ledger position by dt seconds of real time.
-function D.advance(G, caravan, dt)
+function D.advance(G, caravan, dt, players)
     local route = caravan.route or {}
     if route[(caravan.leg or 1) + 1] == nil then return "end" end
-    local tilesPerSecond = (tonumber(caravan.speedKmh) or A.settings.cruiseKmh) / 3.6 * A.settings.offlineSpeedPercent / 100
+    local _, distance = nearestPlayer(players or {}, caravan.x or 0, caravan.y or 0)
+    local factor = D.speedFactor(#(players or {}) > 0 and distance or nil)
+    local tilesPerSecond = (tonumber(caravan.speedKmh) or A.settings.cruiseKmh) / 3.6 * factor
     local tiles = tilesPerSecond * dt
     while tiles > 0 do
         local leg = caravan.leg or 1
@@ -261,6 +313,10 @@ function D.snapProgress(G, caravan, x, y)
     caravan.x, caravan.y = x, y
 end
 
+function D.refreshStock(caravan)
+    caravan.stock = A.Trade.stockFor(caravan.kind)
+end
+
 function D.newTrip(G, caravan, fromId)
     local route = D.planRoute(G, fromId, 2 + A.rand(3))
     if route == nil then return false end
@@ -269,6 +325,10 @@ function D.newTrip(G, caravan, fromId)
     caravan.goals = D.goalsFor(G, caravan)
     caravan.goalIndex = 1
     caravan.arrivals = 0
+    caravan.trip = (caravan.trip or 0) + 1
+    caravan.ambush = nil
+    D.refreshStock(caravan)
+    D.armAmbush(caravan)
     local point = D.offlinePosition(G, caravan)
     if point ~= nil then caravan.x, caravan.y = point.x, point.y end
     return true
@@ -280,7 +340,13 @@ function D.found(now, players)
     if G == nil then return false, "no_road_graph" end
     local faction, catalog = D.pickFaction()
     if faction == nil then return false, "no_faction" end
+    local class = A.Vehicles.classFor(faction)
+    local maxVehicles = A.settings.maxVehicles
+    if class ~= "military" and class ~= "police" and maxVehicles > 2 then maxVehicles = 2 + A.rand(maxVehicles - 1) end
     local crewCount = A.settings.crewMin + A.rand(A.settings.crewMax - A.settings.crewMin + 1)
+    local vehicles, seats = A.Vehicles.convoy(class, crewCount, maxVehicles)
+    if #vehicles == 0 then return false, "no_vehicles" end
+    crewCount = math.max(2, #vehicles, math.min(crewCount, seats, 16))
     local crew = D.crewFor(catalog, faction, crewCount)
     if crew == nil then return false, "no_profiles" end
     local towns = {}
@@ -289,7 +355,6 @@ function D.found(now, players)
     end
     table.sort(towns)
     if #towns < 2 then return false, "no_towns" end
-    -- destination: a town within 150..900 tiles of some player; start: 2-4 edges away and far from everyone
     local candidates = {}
     for _, id in ipairs(towns) do
         local node = G.nodes[id]
@@ -297,7 +362,6 @@ function D.found(now, players)
         if #players == 0 or (d >= 150 and d <= 900) then candidates[#candidates + 1] = id end
     end
     if #candidates == 0 then candidates = towns end
-    -- shuffle the destinations once, then try a few plans from each
     for index = #candidates, 2, -1 do
         local swap = A.rand(index) + 1
         candidates[index], candidates[swap] = candidates[swap], candidates[index]
@@ -320,33 +384,32 @@ function D.found(now, players)
         end
         if bestD >= A.settings.releaseRadius + 60 then break end
     end
-    -- never found a far start: accept one outside the render radius, otherwise give up
     if route == nil or bestD < A.settings.renderRadius then return false, "no_route" end
-    local class = A.Vehicles.classFor(faction)
-    local vehicles = A.Vehicles.convoy(class, #crew, A.settings.maxVehicles)
-    if #vehicles == 0 then return false, "no_vehicles" end
     local kind = KIND_BY_CLASS[class] or "trade"
     local rules = P().FactionSpawnRules
     local hostile = rules ~= nil and type(rules.hostile) == "function" and rules.hostile(faction) == true or false
     if hostile and kind ~= "convoy" and kind ~= "patrol" then kind = "raid" end
     local speed = A.settings.cruiseKmh
     if class == "military" then speed = speed - 5 elseif class == "raider" then speed = speed + 5 end
+    local factionName = tostring(faction.general and faction.general.name or faction.id)
     local caravan = {
-        name = tostring(faction.general and faction.general.name or faction.id),
-        factionId = faction.id, factionName = tostring(faction.general and faction.general.name or faction.id),
+        name = factionName, factionId = faction.id, factionName = factionName,
         kind = kind, class = class, hostile = hostile,
         vehicles = vehicles, crew = crew, speedKmh = math.max(10, math.min(70, speed)),
-        route = route, leg = 1, t = 0, trips = 0, state = "offline", createdMs = now, lastMs = now,
-        vehicleIds = {}, actorUids = {}, renderFailures = 0, nextRenderAtMs = 0, truce = {}, goalIndex = 1,
+        route = route, leg = 1, t = 0, trips = 0, trip = 0, state = "offline", createdMs = now, lastMs = now,
+        vehicleIds = {}, actorUids = {}, abandoned = {}, renderFailures = 0, nextRenderAtMs = 0, truce = {}, goalIndex = 1, units = 0,
     }
+    caravan.leaderName, caravan.callsign = D.leaderFor(catalog, crew, now)
     caravan.destName = D.nodeName(G, route[#route])
     caravan.goals = D.goalsFor(G, caravan)
+    caravan.trip = 1
+    D.refreshStock(caravan)
+    D.armAmbush(caravan)
     local point = D.offlinePosition(G, caravan)
     if point ~= nil then caravan.x, caravan.y = point.x, point.y end
-    if A.Interact ~= nil and type(A.Interact.offersFor) == "function" then caravan.offers = A.Interact.offersFor(caravan) end
     A.Ledger.create(caravan)
     A.metrics.founded = A.metrics.founded + 1
-    A.log("founded", caravan.id, caravan.name, "(" .. kind .. ", " .. #crew .. " crew, " .. #vehicles .. " car(s))",
+    A.log("founded", caravan.id, caravan.name, caravan.callsign, "(" .. kind .. ", " .. #crew .. " crew, " .. #vehicles .. " car(s))",
         "from", D.nodeName(G, route[1]), "to", caravan.destName)
     return true, caravan
 end
@@ -366,7 +429,9 @@ function D.release(caravan, reason)
     local kept = A.Spawn.teardown(caravan, "alc_release")
     if G ~= nil and caravan.x ~= nil then D.snapProgress(G, caravan, caravan.x, caravan.y) end
     caravan.state = "offline"
-    caravan.halted, caravan.haltUntilMs, caravan.riders = nil, nil, nil
+    caravan.halted, caravan.haltUntilMs, caravan.riders, caravan.recrew, caravan.stuckReport = nil, nil, nil, nil, nil
+    caravan.ambush = caravan.ambush and caravan.ambush.state == "armed" and caravan.ambush or nil
+    caravan.units = 0
     caravan.nextRenderAtMs = A.now() + 30000
     if G ~= nil then caravan.goals = D.goalsFor(G, caravan) caravan.goalIndex = 1 end
     A.metrics.released = A.metrics.released + 1
@@ -376,23 +441,29 @@ function D.release(caravan, reason)
 end
 
 function D.countRendered()
-    local count = 0
+    local count, cars = 0, 0
     for _, caravan in ipairs(A.Ledger.list()) do
-        if caravan.state == "rendering" or caravan.state == "rendered" or caravan.state == "fighting" then count = count + 1 end
+        if caravan.state == "rendering" or caravan.state == "rendered" or caravan.state == "fighting" then
+            count = count + 1
+            cars = cars + #(caravan.vehicleIds or {})
+        end
     end
-    return count
+    return count, cars
 end
 
 function D.tryRender(caravan, players, now)
     if now < (caravan.nextRenderAtMs or 0) or now < D.renderCooldownUntilMs then return false end
-    if D.countRendered() >= D.maxRendered then return false end
+    local rendered, cars = D.countRendered()
+    if rendered >= D.maxRendered or cars + math.min(2, #(caravan.vehicles or {})) > D.maxCars then return false end
     local row, distance = nearestPlayer(players, caravan.x, caravan.y)
     if row == nil or distance > A.settings.renderRadius or distance < A.settings.minSpawnDistance * 0.6 then return false end
     D.renderCooldownUntilMs = now + 15000
-    local ok, reason = A.Spawn.render(caravan, row.player, A.players())
+    local ok, reason = A.Spawn.render(caravan, row.player, A.players(), 1)
     if ok then
         caravan.state = "rendering"
         caravan.renderingAtMs = now
+        caravan.renderUnit = 1
+        caravan.actorUids = {}
         A.debug("rendering", caravan.id, "near", row.key, "at", math.floor(caravan.x), math.floor(caravan.y))
         return true
     end
@@ -403,23 +474,52 @@ function D.tryRender(caravan, players, now)
     return false
 end
 
-function D.onSpawnOutcome(id, outcome)
+function D.onSpawnOutcome(id, outcome, unit)
     local caravan = A.Ledger.get(id)
     if caravan == nil then return end
+    unit = unit or 1
     if type(outcome) == "table" and outcome.ok == true then
-        caravan.state = "rendered"
-        caravan.actorUids = {}
+        caravan.actorUids = caravan.actorUids or {}
         for _, uid in ipairs(outcome.actorUids or {}) do caravan.actorUids[#caravan.actorUids + 1] = uid end
-        caravan.renderedAtMs = A.now()
+        caravan.units = unit
         caravan.renderFailures = 0
+        if unit == 1 and #(caravan.vehicles or {}) > 2 then
+            caravan.state = "rendering"
+            caravan.pendingUnit = 2
+            caravan.unitAtMs = A.now() + 2500
+            A.debug("unit 1 on the road:", caravan.id, "waiting to place unit 2")
+            return
+        end
+        caravan.state = "rendered"
+        caravan.pendingUnit = nil
+        caravan.renderedAtMs = A.now()
         A.metrics.rendered = A.metrics.rendered + 1
-        A.log("on the road:", caravan.id, caravan.name, "cars", table.concat(caravan.vehicleIds or {}, ","), "crew", #caravan.actorUids)
+        A.log("on the road:", caravan.id, caravan.name, caravan.callsign, "cars", table.concat(caravan.vehicleIds or {}, ","), "crew", #caravan.actorUids)
         D.publishDirty = true
         return
     end
     local reason = type(outcome) == "table" and tostring(outcome.reason or "unknown") or "unknown"
+    if unit == 2 then
+        -- the convoy drives on with its first unit
+        A.log("unit 2 spawn failed:", caravan.id, reason)
+        for index = #caravan.vehicleIds, 1, -1 do
+            local car = getVehicleById(caravan.vehicleIds[index])
+            local _, carIndex = A.vehicleTag(car)
+            if car ~= nil and (tonumber(carIndex) or 0) > 2 then
+                A.Spawn.teardownVehicles({ caravan.vehicleIds[index] })
+                table.remove(caravan.vehicleIds, index)
+            end
+        end
+        caravan.state = "rendered"
+        caravan.pendingUnit = nil
+        caravan.renderedAtMs = A.now()
+        A.metrics.rendered = A.metrics.rendered + 1
+        D.publishDirty = true
+        return
+    end
     A.Spawn.teardown(caravan, "alc_spawn_failed")
     caravan.state = "offline"
+    caravan.units = 0
     caravan.renderFailures = (caravan.renderFailures or 0) + 1
     caravan.nextRenderAtMs = A.now() + 30000 * math.min(6, caravan.renderFailures)
     A.metrics.renderRefused = A.metrics.renderRefused + 1
@@ -427,21 +527,44 @@ function D.onSpawnOutcome(id, outcome)
     D.publishDirty = true
 end
 
+-- A driving session of one of our cars ended (A-Life released the crew).
 function D.onSessionFinished(caravanId, vehicleId, reason)
     local caravan = A.Ledger.get(caravanId)
-    if caravan == nil then return end
-    caravan.stranded = caravan.stranded or {}
-    caravan.stranded[tostring(vehicleId)] = tostring(reason or "stopped")
-    local all = true
-    for _, id in ipairs(caravan.vehicleIds or {}) do
-        if caravan.stranded[tostring(id)] == nil then all = false end
+    if caravan == nil or vehicleId == nil then return end
+    reason = tostring(reason or "stopped")
+    if caravan.ambush ~= nil and caravan.ambush.state == "fighting" then return end
+    if caravan.state ~= "rendered" and caravan.state ~= "fighting" then return end
+    caravan.recrew = caravan.recrew or {}
+    caravan.recrewCount = caravan.recrewCount or {}
+    local key = tostring(vehicleId)
+    caravan.recrewCount[key] = (caravan.recrewCount[key] or 0) + 1
+    if caravan.recrewCount[key] > 3 then
+        A.log(caravan.id, "car", vehicleId, "gave up after repeated stops:", reason)
+        D.abandonCar(caravan, vehicleId, "stops")
+        return
     end
-    if all and caravan.state ~= "fighting" then
+    caravan.recrew[key] = { dueMs = A.now() + 4000, reason = reason, vehicleId = vehicleId }
+    A.log(caravan.id, "car", vehicleId, "stopped (" .. reason .. "); re-crewing")
+    if string.find(reason, "Driver died", 1, true) or string.find(reason, "died", 1, true) then
+        local shell = D.driverShell(caravan)
+        if shell ~= nil then A.Lines.say(shell, "driver_down", { uid = caravan.actorUids and caravan.actorUids[1], cooldownMs = 30000 }) end
+    end
+    D.publishDirty = true
+end
+
+function D.abandonCar(caravan, vehicleId, why)
+    A.Spawn.abandon(caravan, vehicleId)
+    caravan.recrew = caravan.recrew or {}
+    caravan.recrew[tostring(vehicleId)] = nil
+    A.log(caravan.id, "car", vehicleId, "abandoned:", why)
+    local shell = D.driverShell(caravan)
+    if shell ~= nil then A.Lines.say(shell, "abandon", { uid = caravan.actorUids and caravan.actorUids[1], cooldownMs = 30000 }) end
+    if #(caravan.vehicleIds or {}) == 0 then
         caravan.state = "stranded"
         caravan.strandedAtMs = A.now()
-        A.log("stranded:", caravan.id, reason)
-        D.publishDirty = true
+        A.log("stranded:", caravan.id, why)
     end
+    D.publishDirty = true
 end
 
 function D.halt(caravan, seconds, reason)
@@ -455,6 +578,7 @@ end
 function D.resume(caravan)
     caravan.halted = nil
     caravan.haltUntilMs = nil
+    caravan.haltReason = nil
     caravan.riders = nil
     A.Spawn.setRiders(caravan, false)
     D.publish(true)
@@ -470,6 +594,175 @@ function D.vehiclePositions(caravan)
     return out, missing
 end
 
+function D.ridersAboard(caravan)
+    for _, id in ipairs(caravan.vehicleIds or {}) do
+        local car = getVehicleById(id)
+        if car ~= nil and A.vehicleHasPlayer(car) then return true end
+    end
+    return false
+end
+
+-- Re-crew requests that came due; cars nobody can drive are abandoned.
+function D.recrewTick(caravan, now)
+    local pending = 0
+    for _, request in pairs(caravan.recrew or {}) do if now >= (request.dueMs or 0) then pending = pending + 1 end end
+    if pending == 0 then return end
+    local free = 0
+    for _, row in ipairs(A.Spawn.survivors(caravan, caravan.x or 0, caravan.y or 0, 60)) do
+        if row.inCar == nil then free = free + 1 end
+    end
+    local limit = math.max(1, math.ceil(free / pending))
+    for key, request in pairs(caravan.recrew or {}) do
+        if now >= (request.dueMs or 0) then
+            local ok, detail = A.Spawn.recrew(caravan, request.vehicleId, nil, limit)
+            if ok then
+                caravan.recrew[key] = nil
+                A.log(caravan.id, "car", request.vehicleId, "re-crewed with", detail, "NPC(s)")
+                D.publishDirty = true
+            else
+                request.tries = (request.tries or 0) + 1
+                request.dueMs = now + 5000
+                if request.tries >= 6 or detail == "no_survivors" or detail == "no_car" then
+                    D.abandonCar(caravan, request.vehicleId, tostring(detail))
+                end
+            end
+        end
+    end
+end
+
+-- Cars without fuel or a working engine are left behind.
+function D.carsTick(caravan, now)
+    if not A.settings.abandonCars or now < (caravan.carCheckAtMs or 0) then return end
+    caravan.carCheckAtMs = now + 10000
+    for _, id in ipairs(A.copy(caravan.vehicleIds or {})) do
+        local car = getVehicleById(id)
+        if car ~= nil and not A.vehicleHasPlayer(car) then
+            local fuel, engine = A.Spawn.carHealth(car)
+            if fuel <= 0.3 or engine == false then D.abandonCar(caravan, id, fuel <= 0.3 and "no fuel" or "engine dead") end
+        end
+    end
+end
+
+-- Escort contract: the escorting player must stay within escortRadius.
+function D.escortTick(caravan, now, players)
+    local escort = caravan.escort
+    if escort == nil then return end
+    local row = playerByKey(players, escort.playerKey)
+    local lead = caravan.x and { x = caravan.x, y = caravan.y } or nil
+    if row ~= nil and lead ~= nil and A.dist(row.x, row.y, lead.x, lead.y) <= D.escortRadius then
+        escort.lastSeenMs = now
+    elseif now - (escort.lastSeenMs or now) > D.escortGraceMs then
+        caravan.escort = nil
+        A.Ledger.addFavor(escort.playerKey, caravan.factionId, -1)
+        local shell = D.driverShell(caravan)
+        if shell ~= nil then A.Lines.say(shell, "escort_void", { uid = caravan.actorUids and caravan.actorUids[1] }) end
+        A.log(caravan.id, "escort by", escort.playerKey, "void: left the convoy")
+        D.publishDirty = true
+    end
+end
+
+function D.armAmbush(caravan)
+    caravan.ambush = nil
+    if A.settings.ambushPercent <= 0 or caravan.kind == "raid" then return end
+    if A.rand(100) >= A.settings.ambushPercent then return end
+    local goals = caravan.goals or {}
+    if #goals < 4 then return end
+    local index = 2 + A.rand(#goals - 3)
+    local kind = "zombies"
+    if A.settings.allowHostile and A.rand(100) < 40 then kind = "raiders" end
+    caravan.ambush = { kind = kind, goalIndex = index, state = "armed", x = goals[index].x, y = goals[index].y }
+end
+
+-- Ambush state machine: armed -> fighting (crew out) -> boarding (back in) -> done.
+function D.ambushTick(caravan, now, players)
+    local ambush = caravan.ambush
+    if ambush == nil or caravan.state ~= "rendered" then return end
+    if ambush.state == "armed" then
+        local row, distance = nearestPlayer(players, ambush.x, ambush.y)
+        if row == nil or distance > 90 then return end
+        if A.dist(caravan.x, caravan.y, ambush.x, ambush.y) > D.ambushLead then return end
+        local ok, reason = A.Spawn.ambush(caravan, ambush.kind, ambush.x, ambush.y, row.player)
+        if not ok then
+            A.debug("ambush skipped:", caravan.id, reason)
+            caravan.ambush = nil
+            return
+        end
+        ambush.state = "fighting"
+        ambush.sinceMs = now
+        A.metrics.ambushes = A.metrics.ambushes + 1
+        D.halt(caravan, 300, "ambush")
+        local shell = D.driverShell(caravan)
+        if shell ~= nil then A.Lines.say(shell, ambush.kind == "raiders" and "ambush_raiders" or "ambush_zombies", { uid = caravan.actorUids[1] }) end
+        A.Spawn.dismount(caravan, { x = ambush.x, y = ambush.y })
+        A.log(caravan.id, "ambush:", ambush.kind, "at", math.floor(ambush.x), math.floor(ambush.y))
+        if caravan.escort ~= nil then caravan.escort.ambushed = true end
+    elseif ambush.state == "fighting" then
+        local clear = A.Spawn.zombiesNear(caravan.x, caravan.y, 18) == 0
+        if ambush.kind == "raiders" then clear = now - ambush.sinceMs > 60000 end
+        if clear then
+            ambush.clearSinceMs = ambush.clearSinceMs or now
+        else
+            ambush.clearSinceMs = nil
+        end
+        if (ambush.clearSinceMs ~= nil and now - ambush.clearSinceMs > 10000) or now - ambush.sinceMs > 150000 then
+            ambush.state = "boarding"
+            ambush.boardingAtMs = now
+            caravan.halted, caravan.haltUntilMs = nil, nil
+            local shell = D.driverShell(caravan)
+            if shell ~= nil then A.Lines.say(shell, "ambush_clear", { uid = caravan.actorUids[1] }) end
+            caravan.recrew = caravan.recrew or {}
+            for _, id in ipairs(caravan.vehicleIds or {}) do
+                caravan.recrew[tostring(id)] = { dueMs = now + 1000, reason = "ambush", vehicleId = id }
+            end
+            if caravan.escort ~= nil and caravan.escort.ambushed then
+                A.Ledger.addFavor(caravan.escort.playerKey, caravan.factionId, 2)
+            end
+            D.publish(true)
+        end
+    elseif ambush.state == "boarding" then
+        if A.isEmpty(caravan.recrew) or now - ambush.boardingAtMs > 120000 then caravan.ambush = nil end
+    end
+end
+
+-- Convoy chatter on A-Life's Knox County Radio when a caravan is in range.
+function D.radioTick(now, players)
+    if not A.settings.radioChatter or now < D.radioAtMs then return end
+    D.radioAtMs = now + D.radioEveryMs
+    local radio = P() and P().KnoxCountyRadio
+    if radio == nil or type(radio.enabled) ~= "function" or radio.channel == nil then return end
+    local ok, enabled = pcall(radio.enabled)
+    if not ok or not enabled then return end
+    local best, bestD = nil, 600
+    for _, caravan in ipairs(A.Ledger.list()) do
+        local _, d = nearestPlayer(players, caravan.x or 0, caravan.y or 0)
+        if d < bestD and caravan.kind ~= "raid" then best, bestD = caravan, d end
+    end
+    if best == nil or type(RadioBroadCast) ~= "table" and type(RadioBroadCast) ~= "userdata" then return end
+    local text = A.Lines.text("radio", D.vars(best))
+    if text == nil then return end
+    local sent = pcall(function()
+        local channel = radio.channel
+        if channel:getAiringBroadcast() ~= nil then error("busy") end
+        local broadcast = RadioBroadCast.new("alc-" .. tostring(now), -1, -1)
+        broadcast:AddRadioLine(RadioLine.new(text, 0.8, 0.9, 0.75))
+        channel:setAiringBroadcast(broadcast)
+    end)
+    if sent then A.metrics.radio = A.metrics.radio + 1 end
+end
+
+function D.vars(caravan)
+    local town
+    local speech = P() and P().Speech
+    if speech ~= nil and type(speech.nearestTown) == "function" then
+        local ok, name = pcall(speech.nearestTown, caravan.x or 0, caravan.y or 0)
+        if ok and type(name) == "string" and name ~= "" then town = name end
+    end
+    local day = D.clock()
+    return { dest = tostring(caravan.destName or "?"), town = tostring(town or caravan.destName or "?"),
+        faction = tostring(caravan.factionName or caravan.name), name = tostring(caravan.callsign or caravan.name),
+        leader = tostring(caravan.leaderName or "the driver"), day = tostring(day) }
+end
+
 function D.observe(G, caravan, now, players)
     local cars, missing = D.vehiclePositions(caravan)
     if #cars > 0 then
@@ -479,16 +772,30 @@ function D.observe(G, caravan, now, players)
         caravan.missingSinceMs = caravan.missingSinceMs or now
         if now - caravan.missingSinceMs > 15000 then D.release(caravan, "cars_gone") return end
     end
+    caravan.ridersAboard = D.ridersAboard(caravan)
     local _, distance = nearestPlayer(players, caravan.x, caravan.y)
-    if distance > A.settings.releaseRadius then D.release(caravan, "far") return end
-    if caravan.halted and caravan.haltUntilMs ~= nil and now >= caravan.haltUntilMs then
+    if distance > A.settings.releaseRadius and not caravan.ridersAboard then D.release(caravan, "far") return end
+    if caravan.halted and caravan.haltUntilMs ~= nil and now >= caravan.haltUntilMs and not (caravan.ambush and caravan.ambush.state == "fighting") then
         D.resume(caravan)
         local shell = D.driverShell(caravan)
         if shell ~= nil then A.Lines.say(shell, "farewell", { uid = caravan.actorUids and caravan.actorUids[1] }) end
     end
+    D.recrewTick(caravan, now)
+    D.carsTick(caravan, now)
+    D.escortTick(caravan, now, players)
+    D.ambushTick(caravan, now, players)
+    local stuck = caravan.stuckReport
+    if stuck ~= nil and now - stuck.atMs < 90000 then
+        local _, d = nearestPlayer(players, stuck.x, stuck.y)
+        if d > D.outOfSight and not caravan.ridersAboard then D.release(caravan, "stuck_out_of_sight") return end
+    end
     if caravan.state == "rendered" and (caravan.arrivals or 0) >= math.max(1, #caravan.vehicleIds) then
         caravan.arrivals = 0
         caravan.trips = (caravan.trips or 0) + 1
+        local shell = D.driverShell(caravan)
+        if caravan.escort ~= nil and A.Interact ~= nil and type(A.Interact.escortReward) == "function" then
+            pcall(A.Interact.escortReward, caravan, players)
+        end
         if caravan.trips >= A.settings.tripsPerCaravan then
             D.release(caravan, "journey_complete")
             D.retire(caravan, "journey_complete")
@@ -497,7 +804,8 @@ function D.observe(G, caravan, now, players)
         local last = caravan.route[#caravan.route]
         if D.newTrip(G, caravan, last) then
             A.log(caravan.id, "reached", D.nodeName(G, last) .. "; next stop", caravan.destName)
-            D.publishDirty = true
+            D.halt(caravan, math.min(A.settings.haltSeconds, D.arrivalPauseSeconds), "arrived")
+            if shell ~= nil then A.Lines.say(shell, caravan.ridersAboard and "arrive_riders" or "arrive", { uid = caravan.actorUids[1], vars = D.vars(caravan) }) end
         else
             D.release(caravan, "no_next_trip")
             D.retire(caravan, "no_next_trip")
@@ -529,54 +837,72 @@ function D.knownTable()
     local known = {}
     for _, caravan in ipairs(A.Ledger.list()) do
         if caravan.state == "rendered" or caravan.state == "rendering" then
-            for _, id in ipairs(caravan.vehicleIds or {}) do
+            for index, id in ipairs(caravan.vehicleIds or {}) do
                 local goals = {}
-                for index = caravan.goalIndex or 1, #(caravan.goals or {}) do
-                    goals[#goals + 1] = { x = caravan.goals[index].x, y = caravan.goals[index].y }
+                for goalIndex = caravan.goalIndex or 1, #(caravan.goals or {}) do
+                    goals[#goals + 1] = { x = caravan.goals[goalIndex].x, y = caravan.goals[goalIndex].y }
                     if #goals >= 40 then break end
                 end
-                known[id] = { caravanId = caravan.id, name = caravan.name, factionId = caravan.factionId, kind = caravan.kind,
-                    speedKmh = caravan.speedKmh, goals = goals, halted = caravan.halted == true, dest = caravan.destName,
-                    hostile = caravan.hostile == true, riders = caravan.riders == true, trade = caravan.offers ~= nil and #caravan.offers > 0 }
+                known[id] = { caravanId = caravan.id, index = index, name = caravan.name, callsign = caravan.callsign, leader = caravan.leaderName,
+                    factionId = caravan.factionId, kind = caravan.kind, speedKmh = caravan.speedKmh, goals = goals, trip = caravan.trip or 1,
+                    halted = caravan.halted == true, dest = caravan.destName, hostile = caravan.hostile == true, riders = caravan.riders == true,
+                    trade = caravan.stock ~= nil and #caravan.stock > 0, escort = caravan.escort ~= nil and caravan.escort.playerKey or nil }
             end
         end
     end
     return known
 end
 
+-- Map markers of every caravan (ledger and on the road).
+function D.markerTable()
+    local markers = {}
+    if not A.settings.markers then return markers end
+    local G = D.graph()
+    for _, caravan in ipairs(A.Ledger.list()) do
+        if caravan.x ~= nil then
+            markers[#markers + 1] = { id = caravan.id, name = caravan.name, callsign = caravan.callsign, kind = caravan.kind,
+                x = math.floor(caravan.x), y = math.floor(caravan.y), heading = G and D.heading(G, caravan) or 0,
+                state = caravan.state, halted = caravan.halted == true, dest = caravan.destName, cars = #(caravan.vehicles or {}) }
+        end
+    end
+    return markers
+end
+
 function D.publish(force)
     local now = A.now()
     if not force and not D.publishDirty and now < D.publishAtMs then return end
-    D.publishAtMs = now + 5000
+    D.publishAtMs = now + 4000
     D.publishDirty = false
-    local known = D.knownTable()
+    local known, markers = D.knownTable(), D.markerTable()
     if A.side() == "server" then
-        pcall(sendServerCommand, A.MODULE, "state", { known = known })
+        pcall(sendServerCommand, A.MODULE, "state", { known = known, markers = markers })
     else
         A.Convoy.setKnown(known)
+        if A.Client ~= nil and type(A.Client.setMarkers) == "function" then pcall(A.Client.setMarkers, markers) end
     end
 end
 
 function D.sendState(player)
-    if A.side() == "server" then pcall(sendServerCommand, player, A.MODULE, "state", { known = D.knownTable() }) end
+    if A.side() == "server" then pcall(sendServerCommand, player, A.MODULE, "state", { known = D.knownTable(), markers = D.markerTable() }) end
 end
 
--- Reports from the driving side (car arrived at the last goal).
+-- Reports from the driving side.
 function D.onConvoyReport(player, command, args)
     if type(args) ~= "table" then return end
     local caravan = A.Ledger.byVehicle(args.vehicleId)
     if caravan == nil then return end
     if command == "arrived" then
         caravan.arrivals = (caravan.arrivals or 0) + 1
-        local shell = D.driverShell(caravan)
-        if shell ~= nil then A.Lines.say(shell, "arrive", { uid = caravan.actorUids[1], vars = { dest = caravan.destName } }) end
+    elseif command == "stuck" then
+        caravan.stuckReport = { vehicleId = args.vehicleId, x = tonumber(args.x) or caravan.x, y = tonumber(args.y) or caravan.y, atMs = A.now() }
+        A.log(caravan.id, "car", args.vehicleId, "reports itself stuck")
     end
 end
 
 function D.step(G, caravan, now, dt, players)
     local state = caravan.state or "offline"
     if state == "offline" then
-        local result = D.advance(G, caravan, dt)
+        local result = D.advance(G, caravan, dt, players)
         if result == "end" then
             caravan.trips = (caravan.trips or 0) + 1
             if caravan.trips >= A.settings.tripsPerCaravan then D.retire(caravan, "journey_complete") return end
@@ -584,9 +910,25 @@ function D.step(G, caravan, now, dt, players)
         end
         D.tryRender(caravan, players, now)
     elseif state == "rendering" then
-        if now - (caravan.renderingAtMs or now) > 120000 then
+        if caravan.pendingUnit == 2 and now >= (caravan.unitAtMs or 0) then
+            caravan.pendingUnit = nil
+            local row = nearestPlayer(players, caravan.x, caravan.y)
+            local ok, reason = false, "no_player"
+            if row ~= nil then ok, reason = A.Spawn.render(caravan, row.player, A.players(), 2) end
+            if ok then
+                caravan.renderUnit = 2
+                caravan.renderingAtMs = now
+            else
+                A.log("unit 2 not placed:", caravan.id, reason)
+                caravan.state = "rendered"
+                caravan.renderedAtMs = now
+                A.metrics.rendered = A.metrics.rendered + 1
+                D.publishDirty = true
+            end
+        elseif now - (caravan.renderingAtMs or now) > 120000 then
             A.Spawn.teardown(caravan, "alc_render_timeout")
             caravan.state = "offline"
+            caravan.units = 0
             caravan.nextRenderAtMs = now + 60000
             A.log("render timed out:", caravan.id)
         end
@@ -595,7 +937,6 @@ function D.step(G, caravan, now, dt, players)
     elseif state == "stranded" then
         local _, distance = nearestPlayer(players, caravan.x or 0, caravan.y or 0)
         if distance > A.settings.releaseRadius or now - (caravan.strandedAtMs or now) > 1800000 then
-            -- crew back into the ledger, cars stay where they stopped
             A.Spawn.teardownActors(caravan.actorUids, "alc_stranded")
             caravan.actorUids = {}
             caravan.vehicleIds = {}
@@ -626,6 +967,8 @@ function D.tick()
         local ok, err = pcall(D.step, G, caravan, now, dt, players)
         if not ok then A.fail("director step " .. tostring(caravan.id), err) end
     end
+    local okRadio, errRadio = pcall(D.radioTick, now, players)
+    if not okRadio then A.fail("radio", errRadio) end
     D.publish(false)
 end
 
@@ -633,11 +976,11 @@ function D.describe()
     local lines = {}
     local G = D.graph()
     for _, caravan in ipairs(A.Ledger.list()) do
-        lines[#lines + 1] = string.format("%s %s [%s] %s at %d,%d leg %d/%d -> %s cars=%d crew=%d%s",
-            tostring(caravan.id), tostring(caravan.name), tostring(caravan.kind), tostring(caravan.state),
+        lines[#lines + 1] = string.format("%s %s %s [%s] %s at %d,%d leg %d/%d -> %s cars=%d crew=%d trip=%d%s%s",
+            tostring(caravan.id), tostring(caravan.name), tostring(caravan.callsign), tostring(caravan.kind), tostring(caravan.state),
             math.floor(caravan.x or 0), math.floor(caravan.y or 0), caravan.leg or 1, math.max(1, #(caravan.route or {}) - 1),
-            tostring(caravan.destName), #(caravan.vehicleIds or {}), #(caravan.actorUids or {}),
-            caravan.halted and " HALTED" or "")
+            tostring(caravan.destName), #(caravan.vehicleIds or {}), #(caravan.actorUids or {}), caravan.trip or 0,
+            caravan.halted and " HALTED" or "", caravan.escort and (" escort=" .. tostring(caravan.escort.playerKey)) or "")
     end
     if #lines == 0 then lines[1] = "no caravans" .. (G == nil and " (no road graph)" or "") end
     return lines
