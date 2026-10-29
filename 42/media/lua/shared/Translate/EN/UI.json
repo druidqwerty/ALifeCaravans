@@ -1,0 +1,7 @@
+{
+    "UI_ALC_Options_Info": "A-Life: Caravans. These are your own options. Everything that applies to the whole game (how many caravans, their speed, trade, riders) is on the host's Sandbox page \"A-Life: Caravans\".",
+    "UI_ALC_Opt_Menu": "Caravan menu on right-click",
+    "UI_ALC_Opt_Menu_tt": "Show the [A-LIFE] Caravan entry in the right-click menu when a caravan car is within 18 tiles.",
+    "UI_ALC_Opt_Notices": "Trade notices",
+    "UI_ALC_Opt_Notices_tt": "Show a short line over your head when you buy something from a caravan or pay a toll."
+}

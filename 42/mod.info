@@ -1,0 +1,10 @@
+name=A-Life: Caravans
+id=ALifeCaravans
+author=druid
+modversion=0.1.0
+versionMin=42.21.0
+poster=poster.png
+icon=icon.png
+require=ProjectALifeNPCs
+loadModAfter=ProjectALifeNPCs,ProjectALifeJimmy,AliveJeemDynamicWorld,ALifeKnoxFractured
+description=Test version. Add-on for Project A-Life [ALIFE NPCS]: faction caravans and convoys drive the roads between towns at low speed (35 km/h), so you can catch up in your own car. Flag them down, ask for news, trade, hitch a ride, pay a raider's toll or threaten them; traders fold or flee, soldiers and raiders fight back (EN/RU). / Тестовая версия. Аддон к Project A-Life: караваны и колонны фракций ездят между городами на малой скорости; останавливайте их, торгуйте, спрашивайте новости, ездите попутчиком, платите налётчикам за проезд (EN/RU).

@@ -1,0 +1,65 @@
+"""Run the lupa simulation tests of A-Life: Caravans. Exit 1 on any failure.
+
+tools/test_alc.lua - stubs Project A-Life (driving sessions, vehicle arrivals, catalog, road graph, registry,
+speech) and the game (cell with a synthetic road, vehicles, scripts, players, events, commands), loads the mod
+in single-player mode, and checks: boot and hooks, sandbox settings, vehicle choice, road scouting, founding,
+offline travel, rendering through the arrival pipeline, route extension and restart on the driving side, halt
+and resume, release and retirement, every interaction (hail, horn, news, trade, ride, wait, farewell, threaten,
+toll, attack reaction), the client menu and trade execution, and that every speech line exists in EN and RU.
+Also compiles every Lua file and checks the JSON translations decode as UTF-8 with identical key sets.
+"""
+import glob
+import json
+import os
+import sys
+
+import lupa
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+MOD_ROOT = os.path.dirname(HERE).replace("\\", "/")
+TRANSLATE = os.path.join(MOD_ROOT, "42", "media", "lua", "shared", "Translate")
+
+
+def load(lang, name):
+    with open(os.path.join(TRANSLATE, lang, name), "rb") as handle:
+        raw = handle.read()
+    return json.loads(raw.decode("utf-8"))
+
+
+def main():
+    failed = 0
+    for path in sorted(glob.glob(os.path.join(MOD_ROOT, "42", "media", "lua", "**", "*.lua"), recursive=True)):
+        with open(path, encoding="utf-8") as handle:
+            source = handle.read()
+        try:
+            lupa.LuaRuntime().compile(source)
+        except Exception as error:  # noqa: BLE001
+            print("FAIL syntax", path, error)
+            failed += 1
+    translations = {}
+    for name in ("IG_UI.json", "UI.json", "Sandbox.json"):
+        en, ru = load("EN", name), load("RU", name)
+        if set(en) != set(ru):
+            print("FAIL translation keys differ in", name, sorted(set(en) ^ set(ru)))
+            failed += 1
+        for key, value in list(en.items()) + list(ru.items()):
+            if not str(value).strip():
+                print("FAIL empty translation", name, key)
+                failed += 1
+        translations.update(en)
+    lua = lupa.LuaRuntime(unpack_returned_tuples=True)
+    lua.globals().MOD_ROOT = MOD_ROOT
+    table = lua.table()
+    for key, value in translations.items():
+        table[key] = value
+    lua.globals().TRANSLATIONS = table
+    with open(os.path.join(HERE, "test_alc.lua"), encoding="utf-8") as handle:
+        source = handle.read()
+    print("== test_alc.lua")
+    failed += lua.execute(source) or 0
+    print("TOTAL failed =", failed)
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

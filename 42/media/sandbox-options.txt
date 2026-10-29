@@ -1,0 +1,187 @@
+VERSION = 1,
+
+option ALifeCaravans.Enabled
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_Enabled,
+}
+
+option ALifeCaravans.MaxCaravans
+{
+	type = integer,
+	min = 1,
+	max = 8,
+	default = 3,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_MaxCaravans,
+}
+
+option ALifeCaravans.FoundIntervalMinutes
+{
+	type = integer,
+	min = 1,
+	max = 60,
+	default = 8,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_FoundIntervalMinutes,
+}
+
+option ALifeCaravans.CruiseKmh
+{
+	type = integer,
+	min = 10,
+	max = 70,
+	default = 35,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_CruiseKmh,
+}
+
+option ALifeCaravans.CrewMin
+{
+	type = integer,
+	min = 2,
+	max = 8,
+	default = 3,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_CrewMin,
+}
+
+option ALifeCaravans.CrewMax
+{
+	type = integer,
+	min = 2,
+	max = 8,
+	default = 5,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_CrewMax,
+}
+
+option ALifeCaravans.MaxVehicles
+{
+	type = integer,
+	min = 1,
+	max = 2,
+	default = 2,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_MaxVehicles,
+}
+
+option ALifeCaravans.RenderRadius
+{
+	type = integer,
+	min = 60,
+	max = 200,
+	default = 100,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_RenderRadius,
+}
+
+option ALifeCaravans.ReleaseRadius
+{
+	type = integer,
+	min = 90,
+	max = 300,
+	default = 170,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_ReleaseRadius,
+}
+
+option ALifeCaravans.MinSpawnDistance
+{
+	type = integer,
+	min = 25,
+	max = 90,
+	default = 45,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_MinSpawnDistance,
+}
+
+option ALifeCaravans.OfflineSpeedPercent
+{
+	type = integer,
+	min = 5,
+	max = 100,
+	default = 25,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_OfflineSpeedPercent,
+}
+
+option ALifeCaravans.TripsPerCaravan
+{
+	type = integer,
+	min = 1,
+	max = 10,
+	default = 2,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_TripsPerCaravan,
+}
+
+option ALifeCaravans.HaltSeconds
+{
+	type = integer,
+	min = 30,
+	max = 600,
+	default = 120,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_HaltSeconds,
+}
+
+option ALifeCaravans.HornHails
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_HornHails,
+}
+
+option ALifeCaravans.AllowHostile
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_AllowHostile,
+}
+
+option ALifeCaravans.AllowRiders
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_AllowRiders,
+}
+
+option ALifeCaravans.TradeEnabled
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_TradeEnabled,
+}
+
+option ALifeCaravans.Debug
+{
+	type = boolean,
+	default = false,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_Debug,
+}

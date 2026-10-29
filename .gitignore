@@ -1,0 +1,3 @@
+tools/loadcheck/
+__pycache__/
+*.pyc
