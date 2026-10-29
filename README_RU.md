@@ -12,7 +12,7 @@
 > выложена, чтобы её проверили игроки: об ошибках пишите (что сделал караван + ваш `Zomboid/console.txt`) в
 > комментариях Steam или в Issues. Мультиплеер проверен меньше всего.
 
-**Мастерская Steam:** https://steamcommunity.com/sharedfiles/filedetails/?id=STEAM_ID · **Исходники (MIT):** https://github.com/druidqwerty/ALifeCaravans
+**Мастерская Steam:** https://steamcommunity.com/sharedfiles/filedetails/?id=3829571361 · **Исходники (MIT):** https://github.com/druidqwerty/ALifeCaravans
 
 <p align="center"><a href="https://boosty.to/lrgpp"><img src="docs/banner.png" alt="LrgPP mods on Boosty" width="640"></a></p>
 

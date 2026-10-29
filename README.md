@@ -12,7 +12,7 @@ separate Lua mod built on A-Life's public NPC driving, arrival and speech functi
 > real session yet. It is out so players can test it: please report bugs (what the caravan did + your
 > `Zomboid/console.txt`) in the Steam comments or the Issues here. Multiplayer is the least tested part.
 
-**Steam Workshop:** https://steamcommunity.com/sharedfiles/filedetails/?id=STEAM_ID · **Source code (MIT):** https://github.com/druidqwerty/ALifeCaravans
+**Steam Workshop:** https://steamcommunity.com/sharedfiles/filedetails/?id=3829571361 · **Source code (MIT):** https://github.com/druidqwerty/ALifeCaravans
 
 <p align="center"><a href="https://boosty.to/lrgpp"><img src="docs/banner.png" alt="LrgPP mods on Boosty" width="640"></a></p>
 
