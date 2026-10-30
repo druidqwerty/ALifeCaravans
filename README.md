@@ -186,6 +186,9 @@ route step is logged. `ALifeCaravans.status()` in the Lua console prints the led
 
 ## Changelog
 
+- 0.3.2 (2026-10-31) — removed Kahlua-unsupported `goto`/labels from the director (the file failed to compile at
+  `ALC_Director.lua:1119`), and removed an unsupported comment from `sandbox-options.txt`. Added regressions for
+  both engine-specific syntax checks. Verified with the offline suite and a real dedicated-server startup.
 - 0.3.1 (2026-10-31) — fixed the Build 42.21 Java Set vehicle scan (no more right-click `Object tried to call nil`),
   repaired the interaction command chain, and added the missing English and Russian event speech lines.
 - 0.2.0 (2026-10-29) — fast ledger travel with easing; map and minimap markers; convoys of up to four cars with

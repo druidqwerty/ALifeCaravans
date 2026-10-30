@@ -1116,41 +1116,41 @@ function D.mergeTick(now, players)
     local list = A.Ledger.list()
     for i = 1, #list do
         local a = list[i]
-        if a.state ~= "rendered" or a.halted or a.factionId == nil then goto continue end
-        for j = i + 1, #list do
-            local b = list[j]
-            if b.state ~= "rendered" or b.halted or b.factionId ~= a.factionId then goto inner_continue end
-            local _, dist = nearestPlayer({{x=a.x, y=a.y}}, b.x or 0, b.y or 0)
-            if dist <= 80 then -- close enough to merge
-                -- Move b's crew and vehicles into a
-                for _, uid in ipairs(b.actorUids or {}) do a.actorUids[#a.actorUids + 1] = uid end
-                for _, vid in ipairs(b.vehicleIds or {}) do a.vehicleIds[#a.vehicleIds + 1] = vid end
-                -- Combine stock
-                for _, rowB in ipairs(b.stock or {}) do
-                    local found = false
-                    for _, rowA in ipairs(a.stock or {}) do
-                        if rowA.item == rowB.item then
-                            rowA.count = rowA.count + rowB.count
-                            found = true
-                            break
+        if a.state == "rendered" and not a.halted and a.factionId ~= nil then
+            for j = i + 1, #list do
+                local b = list[j]
+                if b.state == "rendered" and not b.halted and b.factionId == a.factionId then
+                    local _, dist = nearestPlayer({{x=a.x, y=a.y}}, b.x or 0, b.y or 0)
+                    if dist <= 80 then -- close enough to merge
+                        -- Move b's crew and vehicles into a
+                        for _, uid in ipairs(b.actorUids or {}) do a.actorUids[#a.actorUids + 1] = uid end
+                        for _, vid in ipairs(b.vehicleIds or {}) do a.vehicleIds[#a.vehicleIds + 1] = vid end
+                        -- Combine stock
+                        for _, rowB in ipairs(b.stock or {}) do
+                            local found = false
+                            for _, rowA in ipairs(a.stock or {}) do
+                                if rowA.item == rowB.item then
+                                    rowA.count = rowA.count + rowB.count
+                                    found = true
+                                    break
+                                end
+                            end
+                            if not found and #a.stock < A.Trade.maxStock then
+                                a.stock[#a.stock + 1] = rowB
+                            end
                         end
-                    end
-                    if not found and #a.stock < A.Trade.maxStock then
-                        a.stock[#a.stock + 1] = rowB
+                        A.metrics.merges = A.metrics.merges + 1
+                        A.log("MERGED", b.id, "into", a.id)
+                        local shell = D.driverShell(a)
+                        if shell ~= nil then A.Lines.say(shell, "merged", { uid = a.actorUids[1] }) end
+                        D.release(b, "merged")
+                        D.retire(b, "merged")
+                        D.publishDirty = true
+                        break
                     end
                 end
-                A.metrics.merges = A.metrics.merges + 1
-                A.log("MERGED", b.id, "into", a.id)
-                local shell = D.driverShell(a)
-                if shell ~= nil then A.Lines.say(shell, "merged", { uid = a.actorUids[1] }) end
-                D.release(b, "merged")
-                D.retire(b, "merged")
-                D.publishDirty = true
-                goto continue
             end
-            ::inner_continue::
         end
-        ::continue::
     end
 end
 
@@ -1188,28 +1188,28 @@ function D.distressTick(now, players)
     if not A.settings.distressCalls or now < D.distressCheckAtMs then return end
     D.distressCheckAtMs = now + D.distressEveryMs
     for _, caravan in ipairs(A.Ledger.list()) do
-        if caravan.state ~= "rendered" then goto continue end
-        if caravan.ambush and caravan.ambush.state == "fighting" then
-            if not caravan.distressSent then
-                caravan.distressSent = true
-                local radio = P() and P().KnoxCountyRadio
-                if radio and radio.channel then
-                    local text = "MAYDAY MAYDAY: " .. (caravan.callsign or caravan.name) .. " under attack at " .. math.floor(caravan.x) .. "," .. math.floor(caravan.y) .. ". Request immediate assistance."
-                    pcall(function()
-                        local broadcast = RadioBroadCast.new("alc-distress-" .. tostring(now), -1, -1)
-                        broadcast:AddRadioLine(RadioLine.new(text, 0.9, 0.3, 0.3))
-                        radio.channel:setAiringBroadcast(broadcast)
-                    end)
-                    A.log(caravan.id, "DISTRESS CALL sent")
+        if caravan.state == "rendered" then
+            if caravan.ambush and caravan.ambush.state == "fighting" then
+                if not caravan.distressSent then
+                    caravan.distressSent = true
+                    local radio = P() and P().KnoxCountyRadio
+                    if radio and radio.channel then
+                        local text = "MAYDAY MAYDAY: " .. (caravan.callsign or caravan.name) .. " under attack at " .. math.floor(caravan.x) .. "," .. math.floor(caravan.y) .. ". Request immediate assistance."
+                        pcall(function()
+                            local broadcast = RadioBroadCast.new("alc-distress-" .. tostring(now), -1, -1)
+                            broadcast:AddRadioLine(RadioLine.new(text, 0.9, 0.3, 0.3))
+                            radio.channel:setAiringBroadcast(broadcast)
+                        end)
+                        A.log(caravan.id, "DISTRESS CALL sent")
+                    end
+                    -- Mark on map for players
+                    caravan.distress = { x = caravan.x, y = caravan.y, sinceMs = now }
                 end
-                -- Mark on map for players
-                caravan.distress = { x = caravan.x, y = caravan.y, sinceMs = now }
+            else
+                caravan.distressSent = nil
+                if caravan.distress and now - caravan.distress.sinceMs > 600000 then caravan.distress = nil end
             end
-        else
-            caravan.distressSent = nil
-            if caravan.distress and now - caravan.distress.sinceMs > 600000 then caravan.distress = nil end
         end
-        ::continue::
     end
 end
 
@@ -1218,58 +1218,57 @@ function D.livingWorldTick(now, players)
     if not A.settings.livingWorld or now < D.livingWorldCheckAtMs then return end
     D.livingWorldCheckAtMs = now + D.livingWorldEveryMs
     for _, caravan in ipairs(A.Ledger.list()) do
-        if caravan.state ~= "rendered" then goto continue end
         local cx, cy = caravan.x, caravan.y
-        if cx == nil then goto continue end
-        -- Check for zombie hordes nearby
-        local hordeCount = 0
-        pcall(function()
-            local list = getCell():getZombieList()
-            for index = 0, list:size() - 1 do
-                local zombie = list:get(index)
-                local zx, zy = A.xyz(zombie)
-                if zx and not zombie:isDead() and A.dist(zx, zy, cx, cy) <= 50 then
-                    local data = zombie:getModData()
-                    if not (data and data.ProjectALifeOwned == true) then hordeCount = hordeCount + 1 end
-                end
-            end
-        end)
-        if hordeCount >= 20 and A.rand(100) < 40 then
-            -- Large horde blocks the road
-            D.halt(caravan, 180, "horde_block")
-            local shell = D.driverShell(caravan)
-            if shell ~= nil then A.Lines.say(shell, "horde_block", { uid = caravan.actorUids[1] }) end
-            A.log(caravan.id, "HORDE BLOCK", hordeCount, "zombies")
-            D.publishDirty = true
-        end
-        -- Check for player bases nearby (safehouses)
-        local safehouse = nil
-        pcall(function()
-            local SafeHouse = SafeHouse and SafeHouse.getSafeHouse
-            if SafeHouse then safehouse = SafeHouse(cx, cy, 0) end
-        end)
-        if safehouse ~= nil then
-            local owner = safehouse:getOwner()
-            if owner and owner ~= "" then
-                local key = tostring(owner)
-                -- Friendly faction gets a discount, hostile pays toll
-                local relations = P() and P().Relations
-                local stance = "neutral"
-                if relations and type(relations.playerStance) == "function" then
-                    local actor = D.driverShell(caravan)
-                    if actor then
-                        local p = A.players()[1]
-                        if p then pcall(function() stance = relations.playerStance(actor, p) end) end
+        if caravan.state == "rendered" and cx ~= nil then
+            -- Check for zombie hordes nearby
+            local hordeCount = 0
+            pcall(function()
+                local list = getCell():getZombieList()
+                for index = 0, list:size() - 1 do
+                    local zombie = list:get(index)
+                    local zx, zy = A.xyz(zombie)
+                    if zx and not zombie:isDead() and A.dist(zx, zy, cx, cy) <= 50 then
+                        local data = zombie:getModData()
+                        if not (data and data.ProjectALifeOwned == true) then hordeCount = hordeCount + 1 end
                     end
                 end
-                if stance == "friendly" and caravan.halted == false and A.rand(100) < 20 then
-                    D.halt(caravan, 120, "safehouse_visit")
-                    A.log(caravan.id, "visiting safehouse of", owner)
-                    D.publishDirty = true
+            end)
+            if hordeCount >= 20 and A.rand(100) < 40 then
+                -- Large horde blocks the road
+                D.halt(caravan, 180, "horde_block")
+                local shell = D.driverShell(caravan)
+                if shell ~= nil then A.Lines.say(shell, "horde_block", { uid = caravan.actorUids[1] }) end
+                A.log(caravan.id, "HORDE BLOCK", hordeCount, "zombies")
+                D.publishDirty = true
+            end
+            -- Check for player bases nearby (safehouses)
+            local safehouse = nil
+            pcall(function()
+                local SafeHouse = SafeHouse and SafeHouse.getSafeHouse
+                if SafeHouse then safehouse = SafeHouse(cx, cy, 0) end
+            end)
+            if safehouse ~= nil then
+                local owner = safehouse:getOwner()
+                if owner and owner ~= "" then
+                    local key = tostring(owner)
+                    -- Friendly faction gets a discount, hostile pays toll
+                    local relations = P() and P().Relations
+                    local stance = "neutral"
+                    if relations and type(relations.playerStance) == "function" then
+                        local actor = D.driverShell(caravan)
+                        if actor then
+                            local p = A.players()[1]
+                            if p then pcall(function() stance = relations.playerStance(actor, p) end) end
+                        end
+                    end
+                    if stance == "friendly" and caravan.halted == false and A.rand(100) < 20 then
+                        D.halt(caravan, 120, "safehouse_visit")
+                        A.log(caravan.id, "visiting safehouse of", owner)
+                        D.publishDirty = true
+                    end
                 end
             end
         end
-        ::continue::
     end
 end
 

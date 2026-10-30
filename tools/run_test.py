@@ -13,6 +13,7 @@ Also compiles every Lua file and checks the JSON translations decode as UTF-8 wi
 import glob
 import json
 import os
+import re
 import sys
 
 import lupa
@@ -33,12 +34,27 @@ def main():
     for path in sorted(glob.glob(os.path.join(MOD_ROOT, "42", "media", "lua", "**", "*.lua"), recursive=True)):
         with open(path, encoding="utf-8") as handle:
             source = handle.read()
+        # Lupa accepts Lua 5.2+ goto, but PZ's Kahlua parser rejects it before
+        # the file can run. Keep this source-level regression even when the
+        # simulation itself compiles successfully.
+        executable = re.sub(r"--\[\[.*?\]\]|--[^\n]*", "", source, flags=re.S)
+        executable = re.sub(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'', '""', executable)
+        for match in re.finditer(r"\bgoto\b|::[A-Za-z_][A-Za-z0-9_]*::", executable):
+            line = executable.count("\n", 0, match.start()) + 1
+            print("FAIL Kahlua unsupported goto/label", path, "line", line)
+            failed += 1
         try:
             lupa.LuaRuntime().compile(source)
         except Exception as error:  # noqa: BLE001
             print("FAIL syntax", path, error)
             failed += 1
     translations = {}
+    sandbox_path = os.path.join(MOD_ROOT, "42", "media", "sandbox-options.txt")
+    with open(sandbox_path, encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, 1):
+            if "--" in line:
+                print("FAIL CustomSandboxOptions comment", sandbox_path, "line", line_number)
+                failed += 1
     for name in ("IG_UI.json", "UI.json", "Sandbox.json"):
         en, ru = load("EN", name), load("RU", name)
         if set(en) != set(ru):

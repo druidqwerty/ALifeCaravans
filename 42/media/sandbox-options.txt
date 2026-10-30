@@ -233,8 +233,6 @@ option ALifeCaravans.Debug
 	translation = ALifeCaravans_Debug,
 }
 
--- NEW FEATURES SETTINGS --
-
 option ALifeCaravans.EventCaravans
 {
 	type = boolean,
