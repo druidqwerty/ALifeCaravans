@@ -376,9 +376,11 @@ function C.near(player, radius)
     if px == nil or type(getCell) ~= "function" then return out end
     local ok, err = pcall(function()
         local list = getCell():getVehicles()
-        if list == nil then return end
-        for index = 0, list:size() - 1 do
-            local vehicle = list:get(index)
+        if list == nil or list.iterator == nil then return end
+        -- Build 42.21 returns a Java Set here: size()/iterator(), no get(index).
+        local iterator = list:iterator()
+        while iterator:hasNext() do
+            local vehicle = iterator:next()
             local id = vehicle ~= nil and vehicle:getId() or nil
             local entry = id ~= nil and C.known[id] or nil
             if entry ~= nil then

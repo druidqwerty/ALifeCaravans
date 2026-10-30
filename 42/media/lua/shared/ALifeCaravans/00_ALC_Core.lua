@@ -8,7 +8,7 @@ ALifeCaravans = ALifeCaravans or {}
 local A = ALifeCaravans
 
 A.MOD_ID = "ALifeCaravans"
-A.VERSION = "0.2.0"
+A.VERSION = "0.3.1"
 A.TAG = "[ALC]"
 A.MODULE = "ALifeCaravans"        -- client<->server command module name
 A.MODDATA_ID = "ALifeCaravanId"   -- vehicle ModData key (authoritative side only)
@@ -17,28 +17,42 @@ A.SCHEMA = 2                      -- ledger schema (1 = 0.1.0)
 -- Defaults = the Sandbox defaults in 42/media/sandbox-options.txt.
 A.defaults = {
     enabled = true,
-    maxCaravans = 3,
-    foundIntervalMinutes = 8,     -- real minutes between new caravans
+    maxCaravans = 5,              -- more caravans on the map
+    foundIntervalMinutes = 5,     -- real minutes between new caravans
     cruiseKmh = 35,               -- convoy cruising speed
     crewMin = 3,
-    crewMax = 6,
-    maxVehicles = 3,              -- cars per caravan (two A-Life arrival units of two cars)
-    renderRadius = 100,           -- a caravan this close to a player drives for real
-    releaseRadius = 170,          -- this far from every player it goes back to the ledger
-    minSpawnDistance = 45,        -- never materialise closer than this to a player
-    offlineSpeedPercent = 300,    -- ledger travel speed as % of the cruise speed, far from players
-    tripsPerCaravan = 2,          -- town-to-town trips before the caravan is retired
-    haltSeconds = 120,            -- how long a flagged-down caravan waits
+    crewMax = 8,
+    maxVehicles = 4,              -- cars per caravan (two A-Life arrival units of two cars)
+    renderRadius = 120,           -- a caravan this close to a player drives for real
+    releaseRadius = 200,          -- this far from every player it goes back to the ledger
+    minSpawnDistance = 40,        -- never materialise closer than this to a player
+    offlineSpeedPercent = 500,    -- ledger travel speed as % of the cruise speed, far from players (faster sim)
+    tripsPerCaravan = 4,          -- town-to-town trips before the caravan is retired
+    haltSeconds = 180,            -- how long a flagged-down caravan waits
     hornHails = true,             -- horn / headlight flashes flag a caravan down
     allowHostile = true,          -- raider/gang caravans (toll, ambush)
     allowRiders = true,           -- players may hitch a ride
     tradeEnabled = true,
     escortContracts = true,
-    ambushPercent = 25,           -- chance per leg of an ambush while a player is near
+    ambushPercent = 30,           -- chance per leg of an ambush while a player is near
     radioChatter = true,          -- convoy chatter on A-Life's Knox County Radio
     abandonCars = true,           -- out-of-fuel / dead-engine cars are left behind
     markers = true,               -- caravans may be shown on players' maps
     debug = false,
+    -- NEW FEATURES:
+    eventCaravans = true,         -- special event caravans (supply drops, refugees, etc.)
+    scavengingEnabled = true,     -- caravans can scavenge while travelling
+    breakdownChance = 10,         -- % chance per trip for a breakdown event
+    refuelEnabled = true,         -- caravans stop at gas stations
+    mergeCaravans = true,         -- same-faction caravans can merge
+    playerCanFormCaravan = true,  -- players can recruit NPCs and form their own caravan
+    caravanCargo = true,          -- physical cargo in trunks that can be looted
+    dynamicRoutes = true,         -- routes adapt to road conditions, bridge status
+    weatherEffects = true,        -- weather affects speed and events
+    nightTravelPenalty = 0.7,     -- speed multiplier at night
+    factionReputationImpact = true, -- actions affect faction reputation more deeply
+    distressCalls = true,         -- caravans can send distress signals
+    livingWorld = true,           -- caravans interact with world (zombie hordes, player bases)
 }
 A.settings = A.settings or {}
 for key, value in pairs(A.defaults) do A.settings[key] = value end
@@ -47,6 +61,7 @@ A.metrics = {
     founded = 0, rendered = 0, renderRefused = 0, released = 0, retired = 0, legs = 0, halts = 0,
     hails = 0, trades = 0, rides = 0, tolls = 0, fights = 0, flights = 0, lines = 0, errors = 0,
     recrews = 0, abandoned = 0, unstuck = 0, rescouts = 0, escorts = 0, ambushes = 0, radio = 0, barters = 0,
+    events = 0, scavenging = 0, breakdowns = 0, refuels = 0, merges = 0, lostCargo = 0, playerCaravans = 0,
 }
 
 function A.now()
@@ -202,6 +217,20 @@ function A.refreshSettings()
     s.abandonCars = sandbox.AbandonCars ~= false
     s.markers = sandbox.Markers ~= false
     s.debug = sandbox.Debug == true
+    -- NEW SETTINGS:
+    s.eventCaravans = sandbox.EventCaravans ~= false
+    s.scavengingEnabled = sandbox.ScavengingEnabled ~= false
+    s.breakdownChance = A.clamp(sandbox.BreakdownChance, 0, 50, d.breakdownChance)
+    s.refuelEnabled = sandbox.RefuelEnabled ~= false
+    s.mergeCaravans = sandbox.MergeCaravans ~= false
+    s.playerCanFormCaravan = sandbox.PlayerCanFormCaravan ~= false
+    s.caravanCargo = sandbox.CaravanCargo ~= false
+    s.dynamicRoutes = sandbox.DynamicRoutes ~= false
+    s.weatherEffects = sandbox.WeatherEffects ~= false
+    s.nightTravelPenalty = A.clamp(sandbox.NightTravelPenalty, 0.3, 1.0, d.nightTravelPenalty)
+    s.factionReputationImpact = sandbox.FactionReputationImpact ~= false
+    s.distressCalls = sandbox.DistressCalls ~= false
+    s.livingWorld = sandbox.LivingWorld ~= false
     return true
 end
 
@@ -280,6 +309,9 @@ function A.counters()
         .. " abandoned=" .. m.abandoned .. " unstuck=" .. m.unstuck .. " rescouts=" .. m.rescouts
         .. " escorts=" .. m.escorts .. " ambushes=" .. m.ambushes .. " radio=" .. m.radio
         .. " lines=" .. m.lines .. " errors=" .. m.errors
+        .. " events=" .. m.events .. " scavenging=" .. m.scavenging .. " breakdowns=" .. m.breakdowns
+        .. " refuels=" .. m.refuels .. " merges=" .. m.merges .. " lostCargo=" .. m.lostCargo
+        .. " playerCaravans=" .. m.playerCaravans
 end
 
 -- Console helper: ALifeCaravans.status()

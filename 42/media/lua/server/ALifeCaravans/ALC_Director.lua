@@ -19,8 +19,12 @@ require "ALifeCaravans/ALC_Spawn"
 
 local A = ALifeCaravans
 local D = { nextTickMs = 0, intervalMs = 2000, lastTickMs = nil, renderCooldownUntilMs = 0, publishAtMs = 0,
-    publishDirty = false, maxRendered = 2, maxCars = 7, goalSpacing = 55, radioAtMs = 0, radioEveryMs = 300000,
-    arrivalPauseSeconds = 60, escortRadius = 70, escortGraceMs = 60000, ambushLead = 60, outOfSight = 60 }
+    publishDirty = false, maxRendered = 3, maxCars = 8, goalSpacing = 55, radioAtMs = 0, radioEveryMs = 300000,
+    arrivalPauseSeconds = 60, escortRadius = 70, escortGraceMs = 60000, ambushLead = 60, outOfSight = 60,
+    eventCheckAtMs = 0, eventEveryMs = 1800000, scavengingCheckAtMs = 0, scavengingEveryMs = 300000,
+    breakdownCheckAtMs = 0, refuelCheckAtMs = 0, mergeCheckAtMs = 0, mergeEveryMs = 600000,
+    weatherCheckAtMs = 0, weatherEveryMs = 60000, distressCheckAtMs = 0, distressEveryMs = 120000,
+    livingWorldCheckAtMs = 0, livingWorldEveryMs = 300000 }
 A.Director = D
 
 local KIND_BY_CLASS = { military = "convoy", police = "patrol", rescue = "rescue", trade = "trade", raider = "raid", civilian = "trade" }
@@ -945,6 +949,330 @@ function D.step(G, caravan, now, dt, players)
     end
 end
 
+-- NEW FEATURE: Event caravans (supply drops, refugees, etc.)
+function D.eventCaravanTick(now, players)
+    if not A.settings.eventCaravans or now < D.eventCheckAtMs then return end
+    D.eventCheckAtMs = now + D.eventEveryMs
+    if A.rand(100) >= 15 then return end -- 15% chance per check
+    local G = D.graph()
+    if G == nil then return end
+    local eventTypes = { "supply_drop", "refugees", "medical_aid", "trade_fair", "scavenger_haul" }
+    local eventType = eventTypes[A.rand(#eventTypes) + 1]
+    local faction, catalog = D.pickFaction()
+    if faction == nil then return end
+    local class = A.Vehicles.classFor(faction)
+    local maxVehicles = A.settings.maxVehicles
+    if class ~= "military" and class ~= "police" and maxVehicles > 2 then maxVehicles = 2 + A.rand(maxVehicles - 1) end
+    local crewCount = A.settings.crewMin + A.rand(A.settings.crewMax - A.settings.crewMin + 1)
+    local vehicles, seats = A.Vehicles.convoy(class, crewCount, maxVehicles)
+    if #vehicles == 0 then return end
+    crewCount = math.max(2, #vehicles, math.min(crewCount, seats, 16))
+    local crew = D.crewFor(catalog, faction, crewCount)
+    if crew == nil then return end
+    local towns = {}
+    for id, node in pairs(G.nodes) do if node.kind == nil or node.kind == "town" then towns[#towns + 1] = id end end
+    table.sort(towns)
+    if #towns < 2 then return end
+    local destination = towns[A.rand(#towns) + 1]
+    local back = D.planRoute(G, destination, 2 + A.rand(3))
+    if back == nil then return end
+    local route = {}
+    for i = #back, 1, -1 do route[#route + 1] = back[i] end
+    local kind = KIND_BY_CLASS[class] or "trade"
+    local rules = P().FactionSpawnRules
+    local hostile = rules ~= nil and type(rules.hostile) == "function" and rules.hostile(faction) == true or false
+    if hostile and kind ~= "convoy" and kind ~= "patrol" then kind = "raid" end
+    local speed = A.settings.cruiseKmh
+    if class == "military" then speed = speed - 5 elseif class == "raider" then speed = speed + 5 end
+    local factionName = tostring(faction.general and faction.general.name or faction.id)
+    local caravan = {
+        name = factionName, factionId = faction.id, factionName = factionName,
+        kind = kind, class = class, hostile = hostile,
+        vehicles = vehicles, crew = crew, speedKmh = math.max(10, math.min(70, speed)),
+        route = route, leg = 1, t = 0, trips = 0, trip = 0, state = "offline", createdMs = now, lastMs = now,
+        vehicleIds = {}, actorUids = {}, abandoned = {}, renderFailures = 0, nextRenderAtMs = 0, truce = {}, goalIndex = 1, units = 0,
+        eventType = eventType, eventData = {},
+    }
+    caravan.leaderName, caravan.callsign = D.leaderFor(catalog, crew, now)
+    caravan.destName = D.nodeName(G, route[#route])
+    caravan.goals = D.goalsFor(G, caravan)
+    caravan.trip = 1
+    D.refreshStock(caravan)
+    D.armAmbush(caravan)
+    local point = D.offlinePosition(G, caravan)
+    if point ~= nil then caravan.x, caravan.y = point.x, point.y end
+    A.Ledger.create(caravan)
+    A.metrics.founded = A.metrics.founded + 1
+    A.metrics.events = A.metrics.events + 1
+    A.log("EVENT CARAVAN founded", caravan.id, caravan.name, caravan.callsign, "(" .. eventType .. ", " .. kind .. ", " .. #crew .. " crew, " .. #vehicles .. " car(s))")
+end
+
+-- NEW FEATURE: Scavenging while travelling
+function D.scavengingTick(caravan, now, players)
+    if not A.settings.scavengingEnabled or caravan.state ~= "rendered" or caravan.halted then return end
+    if now < (caravan.scavengeNextAtMs or 0) then return end
+    caravan.scavengeNextAtMs = now + A.settings.scavengingEveryMs or 300000
+    if A.rand(100) >= 30 then return end -- 30% chance
+    local lootTables = {
+        { "Base.CannedCornedBeef", "Base.CannedChili", "Base.TinnedBeans", "Base.Cigarettes" },
+        { "Base.Bandage", "Base.Pills", "Base.Disinfectant", "Base.Antibiotics" },
+        { "Base.Bullets9mmBox", "Base.ShotgunShellsBox", "Base.556Box" },
+        { "Base.PetrolCan", "Base.EmptyPetrolCan", "Base.Battery" },
+        { "Base.Axe", "Base.Hammer", "Base.Saw", "Base.Crowbar", "Base.Wrench" },
+    }
+    local loot = lootTables[A.rand(#lootTables) + 1]
+    local item = loot[A.rand(#loot) + 1]
+    if not A.Trade.exists(item) then return end
+    local count = 1 + A.rand(2)
+    local added = false
+    for _, row in ipairs(caravan.stock or {}) do
+        if row.item == item then
+            row.count = math.min(A.Trade.maxCount * 2, row.count + count)
+            added = true
+            break
+        end
+    end
+    if not added and #(caravan.stock or {}) < A.Trade.maxStock then
+        caravan.stock[#caravan.stock + 1] = { item = item, name = A.Trade.name(item), value = A.Trade.valueOf(item), count = count }
+        added = true
+    end
+    if added then
+        A.metrics.scavenging = A.metrics.scavenging + 1
+        A.log(caravan.id, "scavenged", count, item)
+        local shell = D.driverShell(caravan)
+        if shell ~= nil then A.Lines.say(shell, "scavenged", { uid = caravan.actorUids[1], vars = { item = A.Trade.name(item) } }) end
+        D.publishDirty = true
+    end
+end
+
+-- NEW FEATURE: Vehicle breakdowns
+function D.breakdownTick(caravan, now, players)
+    if caravan.state ~= "rendered" or caravan.halted then return end
+    if now < (caravan.breakdownCheckAtMs or 0) then return end
+    caravan.breakdownCheckAtMs = now + 120000 -- check every 2 minutes
+    if A.rand(100) >= (A.settings.breakdownChance or 10) then return end
+    if #(caravan.vehicleIds or {}) == 0 then return end
+    local vehicleId = caravan.vehicleIds[A.rand(#caravan.vehicleIds) + 1]
+    local car = getVehicleById(vehicleId)
+    if car == nil or A.vehicleHasPlayer(car) then return end
+    -- Damage the engine
+    pcall(function()
+        local engine = car:getPartById("Engine")
+        if engine then engine:setCondition(0) end
+    end)
+    A.metrics.breakdowns = A.metrics.breakdowns + 1
+    A.log(caravan.id, "breakdown on car", vehicleId)
+    local shell = D.driverShell(caravan)
+    if shell ~= nil then A.Lines.say(shell, "breakdown", { uid = caravan.actorUids[1], cooldownMs = 60000 }) end
+    D.halt(caravan, 300, "breakdown")
+    D.publishDirty = true
+end
+
+-- NEW FEATURE: Refuel at gas stations
+function D.refuelTick(caravan, now, players)
+    if not A.settings.refuelEnabled or caravan.state ~= "rendered" then return end
+    if now < (caravan.refuelCheckAtMs or 0) then return end
+    caravan.refuelCheckAtMs = now + 60000
+    for _, id in ipairs(caravan.vehicleIds or {}) do
+        local car = getVehicleById(id)
+        if car ~= nil and not A.vehicleHasPlayer(car) then
+            local fuel = 1
+            pcall(function()
+                local tank = car:getPartById("GasTank")
+                if tank then fuel = tank:getContainerContentAmount() end
+            end)
+            if fuel <= 0.25 then
+                -- Find nearby gas station
+                local G = D.graph()
+                if G == nil then return end
+                local cx, cy = A.xyz(car)
+                if cx == nil then return end
+                -- Simple check: are we near a gas station zone?
+                local square = getCell():getGridSquare(math.floor(cx), math.floor(cy), 0)
+                if square ~= nil then
+                    local zone = square:getZone()
+                    if zone and string.find(tostring(zone:getName()), "Gas", 1, true) then
+                        pcall(function()
+                            local tank = car:getPartById("GasTank")
+                            if tank then tank:setContainerContentAmount(tank:getContainerCapacity()) end
+                        end)
+                        A.metrics.refuels = A.metrics.refuels + 1
+                        A.log(caravan.id, "refueled at gas station", vehicleId)
+                        local shell = D.driverShell(caravan)
+                        if shell ~= nil then A.Lines.say(shell, "refueled", { uid = caravan.actorUids[1], vars = {}, cooldownMs = 60000 }) end
+                        D.publishDirty = true
+                        return
+                    end
+                end
+            end
+        end
+    end
+end
+
+-- NEW FEATURE: Merge same-faction caravans
+function D.mergeTick(now, players)
+    if not A.settings.mergeCaravans or now < D.mergeCheckAtMs then return end
+    D.mergeCheckAtMs = now + D.mergeEveryMs
+    local list = A.Ledger.list()
+    for i = 1, #list do
+        local a = list[i]
+        if a.state ~= "rendered" or a.halted or a.factionId == nil then goto continue end
+        for j = i + 1, #list do
+            local b = list[j]
+            if b.state ~= "rendered" or b.halted or b.factionId ~= a.factionId then goto inner_continue end
+            local _, dist = nearestPlayer({{x=a.x, y=a.y}}, b.x or 0, b.y or 0)
+            if dist <= 80 then -- close enough to merge
+                -- Move b's crew and vehicles into a
+                for _, uid in ipairs(b.actorUids or {}) do a.actorUids[#a.actorUids + 1] = uid end
+                for _, vid in ipairs(b.vehicleIds or {}) do a.vehicleIds[#a.vehicleIds + 1] = vid end
+                -- Combine stock
+                for _, rowB in ipairs(b.stock or {}) do
+                    local found = false
+                    for _, rowA in ipairs(a.stock or {}) do
+                        if rowA.item == rowB.item then
+                            rowA.count = rowA.count + rowB.count
+                            found = true
+                            break
+                        end
+                    end
+                    if not found and #a.stock < A.Trade.maxStock then
+                        a.stock[#a.stock + 1] = rowB
+                    end
+                end
+                A.metrics.merges = A.metrics.merges + 1
+                A.log("MERGED", b.id, "into", a.id)
+                local shell = D.driverShell(a)
+                if shell ~= nil then A.Lines.say(shell, "merged", { uid = a.actorUids[1] }) end
+                D.release(b, "merged")
+                D.retire(b, "merged")
+                D.publishDirty = true
+                goto continue
+            end
+            ::inner_continue::
+        end
+        ::continue::
+    end
+end
+
+-- NEW FEATURE: Weather effects on speed
+function D.weatherTick(now, players)
+    if not A.settings.weatherEffects or now < D.weatherCheckAtMs then return end
+    D.weatherCheckAtMs = now + D.weatherEveryMs
+    local climate = getClimateManager and getClimateManager() or nil
+    local isRaining = false
+    local isSnowing = false
+    local isFoggy = false
+    if climate ~= nil then
+        pcall(function() isRaining = climate:isRaining() end)
+        pcall(function() isSnowing = climate:isSnowing() end)
+        pcall(function() isFoggy = climate:getFogIntensity() > 0.5 end)
+    end
+    local multiplier = 1.0
+    if isRaining then multiplier = multiplier * 0.8 end
+    if isSnowing then multiplier = multiplier * 0.6 end
+    if isFoggy then multiplier = multiplier * 0.7 end
+    -- Night penalty
+    local _, hour = D.clock()
+    if hour >= 22 or hour <= 5 then multiplier = multiplier * (A.settings.nightTravelPenalty or 0.7) end
+    for _, caravan in ipairs(A.Ledger.list()) do
+        if caravan.state == "rendered" and not caravan.halted then
+            caravan.weatherMultiplier = multiplier
+            local baseSpeed = tonumber(caravan.baseSpeedKmh) or caravan.speedKmh
+            caravan.speedKmh = math.max(10, math.floor(baseSpeed * multiplier))
+        end
+    end
+end
+
+-- NEW FEATURE: Distress calls
+function D.distressTick(now, players)
+    if not A.settings.distressCalls or now < D.distressCheckAtMs then return end
+    D.distressCheckAtMs = now + D.distressEveryMs
+    for _, caravan in ipairs(A.Ledger.list()) do
+        if caravan.state ~= "rendered" then goto continue end
+        if caravan.ambush and caravan.ambush.state == "fighting" then
+            if not caravan.distressSent then
+                caravan.distressSent = true
+                local radio = P() and P().KnoxCountyRadio
+                if radio and radio.channel then
+                    local text = "MAYDAY MAYDAY: " .. (caravan.callsign or caravan.name) .. " under attack at " .. math.floor(caravan.x) .. "," .. math.floor(caravan.y) .. ". Request immediate assistance."
+                    pcall(function()
+                        local broadcast = RadioBroadCast.new("alc-distress-" .. tostring(now), -1, -1)
+                        broadcast:AddRadioLine(RadioLine.new(text, 0.9, 0.3, 0.3))
+                        radio.channel:setAiringBroadcast(broadcast)
+                    end)
+                    A.log(caravan.id, "DISTRESS CALL sent")
+                end
+                -- Mark on map for players
+                caravan.distress = { x = caravan.x, y = caravan.y, sinceMs = now }
+            end
+        else
+            caravan.distressSent = nil
+            if caravan.distress and now - caravan.distress.sinceMs > 600000 then caravan.distress = nil end
+        end
+        ::continue::
+    end
+end
+
+-- NEW FEATURE: Living world interactions
+function D.livingWorldTick(now, players)
+    if not A.settings.livingWorld or now < D.livingWorldCheckAtMs then return end
+    D.livingWorldCheckAtMs = now + D.livingWorldEveryMs
+    for _, caravan in ipairs(A.Ledger.list()) do
+        if caravan.state ~= "rendered" then goto continue end
+        local cx, cy = caravan.x, caravan.y
+        if cx == nil then goto continue end
+        -- Check for zombie hordes nearby
+        local hordeCount = 0
+        pcall(function()
+            local list = getCell():getZombieList()
+            for index = 0, list:size() - 1 do
+                local zombie = list:get(index)
+                local zx, zy = A.xyz(zombie)
+                if zx and not zombie:isDead() and A.dist(zx, zy, cx, cy) <= 50 then
+                    local data = zombie:getModData()
+                    if not (data and data.ProjectALifeOwned == true) then hordeCount = hordeCount + 1 end
+                end
+            end
+        end)
+        if hordeCount >= 20 and A.rand(100) < 40 then
+            -- Large horde blocks the road
+            D.halt(caravan, 180, "horde_block")
+            local shell = D.driverShell(caravan)
+            if shell ~= nil then A.Lines.say(shell, "horde_block", { uid = caravan.actorUids[1] }) end
+            A.log(caravan.id, "HORDE BLOCK", hordeCount, "zombies")
+            D.publishDirty = true
+        end
+        -- Check for player bases nearby (safehouses)
+        local safehouse = nil
+        pcall(function()
+            local SafeHouse = SafeHouse and SafeHouse.getSafeHouse
+            if SafeHouse then safehouse = SafeHouse(cx, cy, 0) end
+        end)
+        if safehouse ~= nil then
+            local owner = safehouse:getOwner()
+            if owner and owner ~= "" then
+                local key = tostring(owner)
+                -- Friendly faction gets a discount, hostile pays toll
+                local relations = P() and P().Relations
+                local stance = "neutral"
+                if relations and type(relations.playerStance) == "function" then
+                    local actor = D.driverShell(caravan)
+                    if actor then
+                        local p = A.players()[1]
+                        if p then pcall(function() stance = relations.playerStance(actor, p) end) end
+                    end
+                end
+                if stance == "friendly" and caravan.halted == false and A.rand(100) < 20 then
+                    D.halt(caravan, 120, "safehouse_visit")
+                    A.log(caravan.id, "visiting safehouse of", owner)
+                    D.publishDirty = true
+                end
+            end
+        end
+        ::continue::
+    end
+end
+
 function D.tick()
     if not A.authority() then return end
     local now = A.now()
@@ -966,7 +1294,18 @@ function D.tick()
     for _, caravan in ipairs(A.Ledger.list()) do
         local ok, err = pcall(D.step, G, caravan, now, dt, players)
         if not ok then A.fail("director step " .. tostring(caravan.id), err) end
+        -- NEW FEATURE TICKS
+        if caravan.state == "rendered" then
+            pcall(D.scavengingTick, caravan, now, players)
+            pcall(D.breakdownTick, caravan, now, players)
+            pcall(D.refuelTick, caravan, now, players)
+        end
     end
+    pcall(D.eventCaravanTick, now, players)
+    pcall(D.mergeTick, now, players)
+    pcall(D.weatherTick, now, players)
+    pcall(D.distressTick, now, players)
+    pcall(D.livingWorldTick, now, players)
     local okRadio, errRadio = pcall(D.radioTick, now, players)
     if not okRadio then A.fail("radio", errRadio) end
     D.publish(false)

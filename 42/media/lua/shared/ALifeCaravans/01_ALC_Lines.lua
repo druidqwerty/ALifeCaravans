@@ -54,6 +54,26 @@ L.catalog = {
     abandon = { count = 2 },
     stuck = { count = 2 },
     radio = { count = 4 },
+    -- NEW LINES FOR NEW FEATURES
+    scavenged = { count = 2 },
+    breakdown = { count = 2 },
+    refueled = { count = 2 },
+    merged = { count = 2 },
+    horde_block = { count = 2 },
+    safehouse_visit = { count = 2 },
+    distress_help = { count = 2 },
+    recruit_ok = { count = 2 },
+    recruit_refuse = { count = 2 },
+    inspect_ok = { count = 2 },
+    inspect_refuse = { count = 2 },
+    form_ok = { count = 2 },
+    form_refuse_not_enough = { count = 2 },
+    give_supplies = { count = 2 },
+    event_supply_drop = { count = 2 },
+    event_refugees = { count = 2 },
+    event_medical_aid = { count = 2 },
+    event_trade_fair = { count = 2 },
+    event_scavenger_haul = { count = 2 },
 }
 
 -- Every translation key the catalog needs (for the tests and the status).

@@ -14,7 +14,7 @@ option ALifeCaravans.MaxCaravans
 	type = integer,
 	min = 1,
 	max = 8,
-	default = 3,
+	default = 5,
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_MaxCaravans,
@@ -25,7 +25,7 @@ option ALifeCaravans.FoundIntervalMinutes
 	type = integer,
 	min = 1,
 	max = 60,
-	default = 8,
+	default = 5,
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_FoundIntervalMinutes,
@@ -58,7 +58,7 @@ option ALifeCaravans.CrewMax
 	type = integer,
 	min = 2,
 	max = 12,
-	default = 6,
+	default = 8,
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_CrewMax,
@@ -69,7 +69,7 @@ option ALifeCaravans.MaxVehicles
 	type = integer,
 	min = 1,
 	max = 4,
-	default = 3,
+	default = 4,
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_MaxVehicles,
@@ -80,7 +80,7 @@ option ALifeCaravans.RenderRadius
 	type = integer,
 	min = 60,
 	max = 200,
-	default = 100,
+	default = 120,
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_RenderRadius,
@@ -91,7 +91,7 @@ option ALifeCaravans.ReleaseRadius
 	type = integer,
 	min = 90,
 	max = 300,
-	default = 170,
+	default = 200,
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_ReleaseRadius,
@@ -102,7 +102,7 @@ option ALifeCaravans.MinSpawnDistance
 	type = integer,
 	min = 25,
 	max = 90,
-	default = 45,
+	default = 40,
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_MinSpawnDistance,
@@ -113,7 +113,7 @@ option ALifeCaravans.OfflineSpeedPercent
 	type = integer,
 	min = 25,
 	max = 800,
-	default = 300,
+	default = 500,
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_OfflineSpeedPercent,
@@ -124,7 +124,7 @@ option ALifeCaravans.TripsPerCaravan
 	type = integer,
 	min = 1,
 	max = 10,
-	default = 2,
+	default = 4,
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_TripsPerCaravan,
@@ -135,7 +135,7 @@ option ALifeCaravans.HaltSeconds
 	type = integer,
 	min = 30,
 	max = 600,
-	default = 120,
+	default = 180,
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_HaltSeconds,
@@ -191,7 +191,7 @@ option ALifeCaravans.AmbushPercent
 	type = integer,
 	min = 0,
 	max = 100,
-	default = 25,
+	default = 30,
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_AmbushPercent,
@@ -231,4 +231,127 @@ option ALifeCaravans.Debug
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_Debug,
+}
+
+-- NEW FEATURES SETTINGS --
+
+option ALifeCaravans.EventCaravans
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_EventCaravans,
+}
+
+option ALifeCaravans.ScavengingEnabled
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_ScavengingEnabled,
+}
+
+option ALifeCaravans.BreakdownChance
+{
+	type = integer,
+	min = 0,
+	max = 50,
+	default = 10,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_BreakdownChance,
+}
+
+option ALifeCaravans.RefuelEnabled
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_RefuelEnabled,
+}
+
+option ALifeCaravans.MergeCaravans
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_MergeCaravans,
+}
+
+option ALifeCaravans.PlayerCanFormCaravan
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_PlayerCanFormCaravan,
+}
+
+option ALifeCaravans.CaravanCargo
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_CaravanCargo,
+}
+
+option ALifeCaravans.DynamicRoutes
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_DynamicRoutes,
+}
+
+option ALifeCaravans.WeatherEffects
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_WeatherEffects,
+}
+
+option ALifeCaravans.NightTravelPenalty
+{
+	type = integer,
+	min = 30,
+	max = 100,
+	default = 70,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_NightTravelPenalty,
+}
+
+option ALifeCaravans.FactionReputationImpact
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_FactionReputationImpact,
+}
+
+option ALifeCaravans.DistressCalls
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_DistressCalls,
+}
+
+option ALifeCaravans.LivingWorld
+{
+	type = boolean,
+	default = true,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_LivingWorld,
 }

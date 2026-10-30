@@ -21,6 +21,18 @@ local I = { reach = 18, tollPrice = 60, installed = false, reservationMs = 20000
 A.Interact = I
 local T = A.Trade
 
+-- NEW INTERACTIONS: Join caravan, request distress help, recruit NPC, inspect cargo
+I.newCommands = {
+    "join_caravan",      -- player asks to travel with caravan to destination
+    "leave_caravan",     -- player leaves a caravan they joined
+    "distress_help",     -- player responds to distress call
+    "recruit_npc",       -- player tries to recruit an NPC from caravan
+    "inspect_cargo",     -- player inspects physical cargo in trunks
+    "form_caravan",      -- player forms their own caravan with recruited NPCs
+    "caravan_status",    -- get detailed status of a caravan
+    "give_supplies",     -- player gives supplies to struggling caravan
+}
+
 local function P() return ProjectALife end
 
 function I.leaderActor(caravan)
@@ -406,6 +418,188 @@ function I.command(player, command, args)
         else
             I.say(caravan, "toll_broke", player, vars)
         end
+
+    -- NEW INTERACTIONS
+    elseif command == "join_caravan" then
+        if not A.settings.allowRiders or caravan.state ~= "rendered" or not caravan.halted then return end
+        local stance = I.stanceFor(caravan, player)
+        if stance == "hostile" or stance == "careful" or caravan.kind == "raid" then
+            I.say(caravan, "ride_refuse", player, vars)
+            return
+        end
+        -- Add player as rider
+        caravan.riders = true
+        caravan.playerRiders = caravan.playerRiders or {}
+        caravan.playerRiders[key] = { sinceMs = A.now(), dest = caravan.destName }
+        A.Spawn.setRiders(caravan, true)
+        I.reply(player, "joinCaravanOk", { vehicleId = vehicleId, dest = caravan.destName, caravanId = caravan.id })
+        I.say(caravan, "ride_ok", player, vars)
+        A.metrics.rides = A.metrics.rides + 1
+        A.Director.publishDirty = true
+    elseif command == "leave_caravan" then
+        if not caravan.playerRiders or not caravan.playerRiders[key] then return end
+        caravan.playerRiders[key] = nil
+        -- Check if any player riders remain
+        local anyLeft = false
+        for _ in pairs(caravan.playerRiders or {}) do anyLeft = true break end
+        if not anyLeft then
+            caravan.riders = false
+            A.Spawn.setRiders(caravan, false)
+        end
+        I.reply(player, "leaveCaravanOk", { vehicleId = vehicleId })
+        I.say(caravan, "farewell", player, vars)
+        A.Director.publishDirty = true
+    elseif command == "distress_help" then
+        if not caravan.distress then return end
+        -- Player responded to distress call
+        caravan.distress.helpers = caravan.distress.helpers or {}
+        caravan.distress.helpers[key] = A.now()
+        A.Ledger.addFavor(key, caravan.factionId, 5) -- Big reputation boost
+        I.say(caravan, "distress_help", player, vars)
+        I.reply(player, "distressHelpOk", { vehicleId = vehicleId, caravanId = caravan.id })
+        A.log(caravan.id, "player", key, "responded to distress call")
+    elseif command == "recruit_npc" then
+        if not A.settings.playerCanFormCaravan or caravan.state ~= "rendered" or not caravan.halted then return end
+        local stance = I.stanceFor(caravan, player)
+        if stance ~= "friendly" and stance ~= "neutral" then
+            I.say(caravan, "recruit_refuse", player, vars)
+            return
+        end
+        if #(caravan.actorUids or {}) <= 2 then
+            I.say(caravan, "recruit_refuse", player, vars) -- Can't spare anyone
+            return
+        end
+        -- Recruit the last NPC (not the leader)
+        local recruitUid = caravan.actorUids[#caravan.actorUids]
+        table.remove(caravan.actorUids)
+        -- Give the NPC to player's faction
+        local registry = P() and P().ActorRegistry
+        if registry then
+            pcall(function()
+                local ok, actor = pcall(registry.read, recruitUid)
+                if ok and actor then
+                    pcall(registry.updateTransient, recruitUid, actor.revision, function(record)
+                        record.memory.playerRecruit = { playerKey = key, sinceMs = A.now() }
+                    end)
+                end
+            end)
+        end
+        I.say(caravan, "recruit_ok", player, vars)
+        I.reply(player, "recruitOk", { vehicleId = vehicleId, uid = recruitUid })
+        A.metrics.playerCaravans = A.metrics.playerCaravans + 1
+        A.log(caravan.id, "NPC", recruitUid, "recruited by", key)
+        D.publishDirty = true
+    elseif command == "inspect_cargo" then
+        if not A.settings.caravanCargo or caravan.state ~= "rendered" then return end
+        if not caravan.halted and I.stanceFor(caravan, player) ~= "friendly" then
+            I.say(caravan, "inspect_refuse", player, vars)
+            return
+        end
+        -- Show physical cargo in trunks
+        local cargo = {}
+        for _, id in ipairs(caravan.vehicleIds or {}) do
+            local car = getVehicleById(id)
+            if car then
+                local trunk = car:getPartById("TruckBed") or car:getPartById("Trunk")
+                if trunk then
+                    local container = trunk:getContainer()
+                    if container then
+                        for i = 0, container:getItems():size() - 1 do
+                            local item = container:getItems():get(i)
+                            cargo[#cargo + 1] = { name = item:getDisplayName(), type = item:getFullType() }
+                        end
+                    end
+                end
+            end
+        end
+        I.reply(player, "cargoView", { vehicleId = vehicleId, cargo = cargo, caravanId = caravan.id })
+        I.say(caravan, "inspect_ok", player, vars)
+    elseif command == "form_caravan" then
+        if not A.settings.playerCanFormCaravan then return end
+        -- Player wants to form their own caravan with recruited NPCs
+        local recruits = {}
+        local registry = P() and P().ActorRegistry
+        if registry then
+            for _, uid in ipairs(caravan.actorUids or {}) do
+                local ok, actor = pcall(registry.read, uid)
+                if ok and actor and actor.memory and actor.memory.playerRecruit and actor.memory.playerRecruit.playerKey == key then
+                    recruits[#recruits + 1] = uid
+                end
+            end
+        end
+        if #recruits < 2 then
+            I.say(caravan, "form_refuse_not_enough", player, vars)
+            return
+        end
+        -- Create player caravan (simplified - just mark the NPCs)
+        for _, uid in ipairs(recruits) do
+            pcall(function()
+                local ok, actor = pcall(registry.read, uid)
+                if ok and actor then
+                    pcall(registry.updateTransient, uid, actor.revision, function(record)
+                        record.memory.playerCaravanLeader = key
+                        record.memory.playerCaravanSince = A.now()
+                    end)
+                end
+            end)
+        end
+        I.say(caravan, "form_ok", player, vars)
+        I.reply(player, "formCaravanOk", { vehicleId = vehicleId, recruits = recruits, count = #recruits })
+        A.metrics.playerCaravans = A.metrics.playerCaravans + 1
+        A.log("PLAYER CARAVAN formed by", key, "with", #recruits, "NPCs")
+    elseif command == "caravan_status" then
+        local status = {
+            caravanId = caravan.id,
+            name = caravan.name,
+            callsign = caravan.callsign,
+            kind = caravan.kind,
+            faction = caravan.factionName,
+            leader = caravan.leaderName,
+            dest = caravan.destName,
+            speed = caravan.speedKmh,
+            crew = #(caravan.actorUids or {}),
+            vehicles = #(caravan.vehicleIds or {}),
+            trip = caravan.trip or 0,
+            state = caravan.state,
+            stance = I.stanceFor(caravan, player),
+            favor = A.Ledger.favor(key, caravan.factionId),
+            stockCount = #(caravan.stock or {}),
+            hasEvent = caravan.eventType ~= nil,
+            eventType = caravan.eventType,
+            distress = caravan.distress ~= nil,
+            halted = caravan.halted == true,
+        }
+        I.reply(player, "caravanStatus", status)
+    elseif command == "give_supplies" then
+        if caravan.state ~= "rendered" or not caravan.halted then return end
+        local stance = I.stanceFor(caravan, player)
+        if stance == "hostile" then return end
+        -- Player gives items from their inventory
+        local give = args.give or {}
+        if #give == 0 then return end
+        local quote = T.quote(caravan.stock or {}, caravan.kind, A.Ledger.favor(key, caravan.factionId), {}, give)
+        if not quote.ok then return end
+        -- Add to caravan stock
+        for _, row in ipairs(quote.giveRows) do
+            if row.type ~= T.currency then
+                local found = false
+                for _, stockRow in ipairs(caravan.stock) do
+                    if stockRow.item == row.type then
+                        stockRow.count = stockRow.count + row.count
+                        found = true
+                        break
+                    end
+                end
+                if not found and #caravan.stock < T.maxStock then
+                    caravan.stock[#caravan.stock + 1] = { item = row.type, name = T.name(row.type), value = T.valueOf(row.type), count = row.count }
+                end
+            end
+        end
+        A.Ledger.addFavor(key, caravan.factionId, 2)
+        I.say(caravan, "give_supplies", player, vars)
+        I.reply(player, "stock", I.stockView(caravan, player))
+        A.log(caravan.id, "received supplies from", key)
+        D.publishDirty = true
     end
 end
 

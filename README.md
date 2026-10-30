@@ -186,6 +186,8 @@ route step is logged. `ALifeCaravans.status()` in the Lua console prints the led
 
 ## Changelog
 
+- 0.3.1 (2026-10-31) — fixed the Build 42.21 Java Set vehicle scan (no more right-click `Object tried to call nil`),
+  repaired the interaction command chain, and added the missing English and Russian event speech lines.
 - 0.2.0 (2026-10-29) — fast ledger travel with easing; map and minimap markers; convoys of up to four cars with
   formation; named leaders and callsigns; barter trade window, faction stock, favor; escort contracts and ambushes;
   re-crewing after a driver's death; abandoned cars; stuck recovery without teleports; radio chatter; headlight-flash

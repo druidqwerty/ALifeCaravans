@@ -138,7 +138,13 @@ function getCell()
         getVehicles = function()
             local list = {}
             for _, v in pairs(VEHICLES) do if not v.removed then list[#list + 1] = v end end
-            return { size = function() return #list end, get = function(_, i) return list[i + 1] end }
+            return { size = function() return #list end,
+                -- PZ 42.21 IsoCell.getVehicles() is a Java Set, not an indexable list.
+                iterator = function()
+                    local index = 0
+                    return { hasNext = function() return index < #list end,
+                        next = function() index = index + 1 return list[index] end }
+                end }
         end,
         getZombieList = function()
             return { size = function() return #ZOMBIES end, get = function(_, i) return ZOMBIES[i + 1] end }
