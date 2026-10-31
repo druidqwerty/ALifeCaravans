@@ -10,7 +10,7 @@ local A = ALifeCaravans
 local Ledger = { store = nil, fallback = false }
 A.Ledger = Ledger
 
-local DEFAULTS = { schema = A.SCHEMA, caravans = {}, sequence = 0, nextFoundAtMs = 0, favor = {} }
+local DEFAULTS = { schema = A.SCHEMA, caravans = {}, sequence = 0, nextFoundAtMs = 0, favor = {}, sosReceipts = {} }
 
 -- 0.1.0 -> 0.2.0: offers { item, name, price, stock } become stock rows
 -- { item, name, value, count }; new fields get their defaults.
@@ -151,6 +151,7 @@ end
 
 function Ledger.reset()
     local store = Ledger.open()
+    store.sosReceipts = {}
     store.caravans = {}
     store.sequence = 0
     store.nextFoundAtMs = 0

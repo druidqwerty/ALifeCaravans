@@ -10,8 +10,10 @@ a reward, pay a raider's toll, or threaten them and see what the faction does. P
 and none of its code is copied; this is a separate Lua mod built on A-Life's public NPC driving, arrival and speech
 functions.
 
-> **Test version 0.3.3.** The 115-check simulation suite passes and a real PZ client loads the mod without
-> Caravans/Lua errors (see "How it was tested"). The new map icons have not been visually checked inside a world yet.
+> **Experimental pre-release 0.4.0 — GitHub only. Steam remains on 0.3.3.** All 148 simulation checks pass,
+> but the complete SOS escape did not pass live testing. In SP, A-Life 1.4.6's physics-authority check blocked
+> boarding; in local MP, an unseated crew member obstructed the car. Acceptance gave no early reward.
+> Successful escape and its payout remain unverified. See [the test report](TEST_0.4.0.md).
 > Please report bugs (what the caravan did + your `Zomboid/console.txt`) in the Steam comments or the Issues here.
 > Multiplayer hand-off and the trade window are the least tested parts.
 
@@ -25,17 +27,16 @@ Free and open source. The code is written by an AI; the direction, the testing a
 
 ## What it does
 
-- **Caravans on the roads.** Up to three caravans (Sandbox) exist at once. Each belongs to an A-Life faction and has a
-  named leader with a convoy callsign ("Sgt. Miller, Bravo-3") and a crew of 3-6 NPCs in one to four cars. The faction
+- **Caravans on the roads.** The default target is five caravans (Sandbox). Each belongs to an A-Life faction and has a
+  named leader with a convoy callsign ("Sgt. Miller, Bravo-3") and a crew of 3-8 NPCs in one to four cars. The faction
   decides the kind: soldiers run a **military convoy**, police a **patrol**, medics and firemen a **rescue crew**,
   workers and civilians a **trade caravan**, gangs and raiders a **raid** party. Military and police convoys take the
   maximum number of cars.
 - **Town to town, fast when unseen.** A caravan travels A-Life's road graph from one town to another (2-4 legs), then
-  picks the next town; after two trips it retires and a new one is founded. While nobody is near it travels in a
-  ledger at 3x its cruising speed (Sandbox), slowing down to the cruising speed as a player comes within the appear
-  distance, so it never pops or jumps. Within 100 tiles of a player it is put on the road for real: the cars appear on
-  a free stretch of road at least 45 tiles away, the crew sits inside, and the convoy drives on at 35 km/h (soldiers 30,
-  raiders 40). Beyond 170 tiles from every player it goes back into the ledger and continues its trip there.
+  picks the next town; after four trips it retires and a new one is founded. While nobody is near it travels in a
+  ledger at 5x its cruising speed (Sandbox), slowing down as a player approaches. Within 120 tiles of a player it
+  is put on the road for real: the cars appear on a free stretch at least 40 tiles away, the crew sits inside,
+  and the convoy drives at 35 km/h (soldiers 30, raiders 40). Beyond 200 tiles from every player it returns to the ledger.
 - **On your map.** Every caravan, in the ledger or on the road, is a marker on the world map (M) and the minimap: a
   small top-down car in the colour of its kind, a heading tick and the callsign; headlights when it is real, a dot
   when it waits. Positions update every few seconds and move smoothly. Each player can turn the markers off (Options > Mods).
@@ -46,7 +47,7 @@ Free and open source. The code is written by an AI; the direction, the testing a
   few seconds says so ("Clear the road!"). A convoy passing a player on foot tells them to stay off the road.
 - **Flag them down.** Right-click near a caravan car (within 18 tiles): *[A-LIFE] Caravan: <faction> <callsign> (<kind>)*.
   Or honk within 30 tiles, or flash your headlights three times. Friendly and neutral crews pull over and wait
-  2 minutes; careful ones refuse half the time; hostile factions tell you to get off the road, and raiders stop you for
+  3 minutes by default; careful ones refuse half the time; hostile factions tell you to get off the road, and raiders stop you for
   a **toll** instead.
 - **Talk.** *Ask for news*: where they are going, what they saw on the road, rumours. *Ask them to wait*: up to two
   more minutes. *Let them go*: they drive on.
@@ -69,6 +70,13 @@ Free and open source. The code is written by an AI; the direction, the testing a
   seconds everyone boards again and drives on. Helping an escorted caravan through an ambush earns extra favor.
 - **A new driver when one dies.** If the driver is killed (or any car's session ends), the survivors walk back to the
   car, a new driver takes the wheel and the convoy continues. Survivors are shared between the cars that need them.
+- **SOS rescue escorts.** An ambushed non-hostile convoy gets an SOS map label. Approach a car and choose
+  *SOS: cover the convoy's escape*. One player claims the rescue: stay within 70 tiles while the crew reboards,
+  then cover at least 80 tiles away from the escape start and 30 seconds of actual NPC-driven movement. Verified
+  escape awards +3 faction favor once (subject to the normal favor cap); accepting alone awards nothing.
+  A minute away/disconnected, a lost convoy, hostility or the deadline ends the contract without reward.
+  The contract and reward receipt are saved; offline travel, missing cars and teleport jumps never count.
+  The host can disable SOS contracts live or change the time limit/distance for new incidents in Sandbox.
 - **Cars left behind.** A car out of fuel or with a dead engine, or one nobody can drive, is abandoned on the road
   (with whatever it carries); the crew goes on with the other cars, or on foot until the ledger takes them back.
 - **Stuck recovery, no teleporting.** A car with no progress skips its waypoint, then parks and re-scouts the road
@@ -103,7 +111,7 @@ without a passenger seat are skipped. Trailers are not towed (A-Life's driving d
 
 ## Installation
 
-1. Subscribe, enable **A-Life: Caravans** in the mod list after Project A-Life, restart the game once.
+1. Steam currently supplies **0.3.3**, not the experimental SOS update. Enable **A-Life: Caravans** after Project A-Life.
 2. On a server add `ALifeCaravans` to `Mods=` (after `ProjectALifeNPCs`).
 3. Without Steam: unpack the zip to `%USERPROFILE%\Zomboid\mods\` (→ `mods\ALifeCaravans\42\mod.info`).
 4. Updating from 0.1.0: saves are kept; the ledger is migrated (old stock, new fields) at the first start.
@@ -111,16 +119,18 @@ without a passenger seat are skipped. Trailers are not towed (A-Life's driving d
 ## Settings
 
 All global settings are on the host's Sandbox page **A-Life: Caravans** (Host > Edit settings > Sandbox; an admin
-can change them in a running game, they apply within 2 s): enable, caravans in the world (3), minutes between new
-caravans (8), cruising speed (35 km/h), crew size (3-6), cars per caravan (3, up to 4), appear/disappear distances
-(100/170 tiles), minimum spawn distance (45), ledger speed (300 %), trips before retiring (2), stop time (120 s),
-horn/headlight hails, hostile caravans, riders, trade, escort contracts, ambush chance (25 %), radio chatter, abandon
-dead cars, markers allowed, debug log. Personal options (Options > Mods > A-Life: Caravans): the right-click menu,
+can change them in a running game, they apply within 2 s): enable, caravan target (5), minutes between new
+caravans (5), cruising speed (35 km/h), crew size (3-8), cars per caravan (4), appear/disappear distances
+(120/200 tiles), minimum spawn distance (40), ledger speed (500 %), trips before retiring (4), stop time (180 s),
+horn/headlight hails, hostile caravans, riders, trade, escort contracts, ambush chance (30 %), radio chatter, abandon
+dead cars, markers allowed, debug log. SOS settings: enabled, time limit (10 real minutes), escape distance (80 tiles).
+Disabling SOS cancels active contracts; timeout/distance changes apply to new incidents. Personal options
+(Options > Mods > A-Life: Caravans): the right-click menu,
 trade notices, markers on the world map, on the minimap, marker labels.
 
 ## Is it working?
 
-`Zomboid/console.txt` has `[ALC] v0.3.3 installed (singleplayer|server|client)` after the world loads, then
+`Zomboid/console.txt` has `[ALC] v0.4.0 installed (singleplayer|server|client)` after the world loads, then
 `[ALC] founded caravan:1 <faction> <callsign> (...)` and `[ALC] on the road: caravan:1 ...` when one appears near
 you, and a counters line every 5 minutes (`founded=… rendered=… hails=… trades=… recrews=…`). Open the map (M): the
 caravans are the small coloured car icons with callsigns. With the Debug sandbox option on, every founding, rendering and
@@ -162,8 +172,14 @@ route step is logged. `ALifeCaravans.status()` in the Lua console prints the led
 ## How it was tested
 
 - `python -I tools/run_test.py` — the lupa simulation (stubs of A-Life's driving/arrival/catalog/registry/speech/radio
-  APIs and of the game): 115 checks over the whole lifecycle, every interaction, formation, stuck recovery, re-crewing,
-  abandonment, ambushes, radio, riders, release, the 0.1.0 ledger migration, translations.
+  APIs and of the game): **148 checks** over the lifecycle, interactions, formation, re-crewing, ambushes, radio,
+  riders, migrations, SOS ownership/progress/failure/replay and the B42.21 notice overload. EN/RU keys also match.
+- **0.4.0 live gate: BLOCKED.** SP and local MP opened/accepted SOS without an early reward. SP boarding
+  was blocked by the A-Life physics-authority check. In the final MP road scenario, an unseated crew member
+  obstructed the car; after 180 seconds the observer recorded zero qualifying distance/time, favor 0 and no
+  receipt. Successful escape/payout was not verified. No test is still running. See [TEST_0.4.0.md](TEST_0.4.0.md).
+  The early run exposed a notice overload error, fixed with B42.21 `HaloTextHelper.addText(IsoPlayer, String)`.
+- The following load/startup results describe earlier releases, not a completed 0.4.0 SOS playthrough.
 - `python -I tools/pz_loadcheck.py start` / `wait` — the real game at the main menu with A-Life and this mod: Lua,
   Sandbox page and translations load (this is how the Java-format `%` bug of 0.1.0 was found).
 - `python -I tools/livetest/livetest.py start` / `wait` — a real dedicated server (no Steam) with A-Life, this mod and a
@@ -175,6 +191,9 @@ route step is logged. `ALifeCaravans.status()` in the Lua console prints the led
 
 ## Known limitations
 
+- Complete SOS escape is blocked in the tested setup; this is an experimental GitHub build, not a Steam update.
+  No SP driving-compatibility fix is included. In-world map-icon appearance is also unverified.
+- SOS currently means **rescue escort after an ambush**, not vehicle repair, medical treatment or refugee missions.
 - Test version: not played through a long session; multiplayer hand-off, the trade window and riders are the parts
   most likely to misbehave. Please report.
 - Caravans only drive on loaded map: far from every player they travel in the ledger. If the road ahead is not loaded
@@ -186,6 +205,10 @@ route step is logged. `ALifeCaravans.status()` in the Lua console prints the led
 
 ## Changelog
 
+- 0.4.0 (2026-10-31) — persistent SOS rescue escorts after ambushes; server-observed moving NPC convoy escape,
+  one-owner claims, exactly-once favor, timeout/failure handling, menu/map state and EN/RU Sandbox controls.
+  Removed free favor for merely answering distress; fixed B42.21 notice overload. 148 simulation checks pass;
+  the live escape gate failed, so this is a GitHub-only experimental pre-release. Steam remains 0.3.3.
 - 0.3.3 (2026-10-31) — replaced square caravan markers with small top-down car icons on the world map and minimap;
   kind colours, headings, callsigns and smooth offline/live movement are preserved. Added icon geometry regressions.
 - 0.3.2 (2026-10-31) — removed Kahlua-unsupported `goto`/labels from the director (the file failed to compile at
@@ -207,4 +230,4 @@ route step is logged. `ALifeCaravans.status()` in the Lua console prints the led
 - **Minidoracat MiniMap - AutoDrive for B42** by Minidoracat (MIT, workshop 3792675881) — studied for its ideas on
   cruise-speed road following, queued waypoints and stuck recovery while designing the convoy logic. No code was
   copied; the driving in this add-on is A-Life's own.
-- The code is written by an AI (Claude); the direction, testing and time are mine (druid).
+- Code developed with AI assistance (including Claude and Codex); direction, testing and time by druid.

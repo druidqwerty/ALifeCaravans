@@ -62,7 +62,10 @@ SERVER_SENT, CLIENT_SENT = {}, {}
 function sendServerCommand(...) SERVER_SENT[#SERVER_SENT + 1] = { ... } end
 function sendClientCommand(...) CLIENT_SENT[#CLIENT_SENT + 1] = { ... } end
 NOTICES = {}
-HaloTextHelper = { addText = function(player, text) NOTICES[#NOTICES + 1] = text end, getColorGreen = function() return 1 end }
+HaloTextHelper = { addText = function(player, text, ...)
+    assert(player ~= nil and select("#", ...) == 0, "expected B42.21 addText(IsoPlayer,String)")
+    NOTICES[#NOTICES + 1] = text
+end, getColorGreen = function() return 1 end }
 HORDES = {}
 function spawnHorde(x1, y1, x2, y2, z, count) HORDES[#HORDES + 1] = { x = (x1 + x2) / 2, y = (y1 + y2) / 2, count = count } end
 -- vanilla map UI stubs (the overlay wraps render)
@@ -832,6 +835,11 @@ PLAYER.vehicle = nil
 -- 23. counters and status do not throw
 check("status runs", pcall(A.status))
 check("no errors counted", A.metrics.errors == 0, A.metrics.errors)
+
+assert(loadfile(MOD_ROOT .. "/tools/test_sos.lua"))()(check, newContext)
+local noticeCount = #NOTICES
+Client.notice("B42.21 notice overload regression")
+check("notice uses the verified B42.21 HaloTextHelper overload", #NOTICES == noticeCount + 1)
 
 print(string.format("checks passed=%d failed=%d", passed, failed))
 return failed

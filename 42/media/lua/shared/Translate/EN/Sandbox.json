@@ -1,4 +1,10 @@
 {
+    "Sandbox_ALifeCaravans_SOSContracts": "SOS rescue escorts",
+    "Sandbox_ALifeCaravans_SOSContracts_tooltip": "Ambushed non-hostile convoys offer rescue escorts. Only verified physical escape earns +3 favor; accepting alone earns nothing. Disabling cancels active SOS contracts.",
+    "Sandbox_ALifeCaravans_SOSTimeoutMinutes": "SOS time limit, real minutes",
+    "Sandbox_ALifeCaravans_SOSTimeoutMinutes_tooltip": "Time from the ambush until the rescue must finish. Applies to newly opened incidents; active contracts keep their deadline.",
+    "Sandbox_ALifeCaravans_SOSEscapeTiles": "SOS escape distance, tiles",
+    "Sandbox_ALifeCaravans_SOSEscapeTiles_tooltip": "Distance a surviving NPC-driven convoy must cover with its rescuer nearby after boarding. At least 30 seconds of driving is also required. Applies to new incidents.",
     "Sandbox_ALifeCaravans": "A-Life: Caravans",
     "Sandbox_ALifeCaravans_Enabled": "Enable caravans",
     "Sandbox_ALifeCaravans_Enabled_tooltip": "Off: no new caravans; caravans already on the road finish their trip. Applies within 2 s, also when an admin changes it in a running game.",

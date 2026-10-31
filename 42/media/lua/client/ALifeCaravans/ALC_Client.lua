@@ -39,9 +39,11 @@ end
 function Cl.notice(text)
     if not Cl.options.notices or type(text) ~= "string" or text == "" then return end
     local player = player0()
+    if player == nil then return end
     pcall(function()
         if HaloTextHelper ~= nil and type(HaloTextHelper.addText) == "function" then
-            HaloTextHelper.addText(player, text, HaloTextHelper.getColorGreen())
+            -- B42.21 exposes (IsoPlayer,String), not (IsoPlayer,String,ColorRGB).
+            HaloTextHelper.addText(player, text)
         else
             player:Say(text)
         end
@@ -320,6 +322,12 @@ function Cl.receive(module, command, args)
             client.allowRiders = client.allowRiders or {}
             client.allowRiders[args.vehicleId] = args.enabled == true
         end
+    elseif command == "sosNotice" then
+        if type(args) == "table" and type(args.key) == "string" then
+            local vars = type(args.vars) == "table" and args.vars or {}
+            if vars.reasonKey ~= nil then vars.reason = L.ui("sos_reason_" .. tostring(vars.reasonKey), tostring(vars.reasonKey)) end
+            Cl.notice(L.ui("sos_" .. args.key, args.key, vars))
+        end
     elseif command == "notice" then
         Cl.notice(type(args) == "table" and args.text or nil)
     end
@@ -342,6 +350,13 @@ function Cl.fill(playerNum, context, worldobjects, test)
     local submenu = context:getNew(context)
     context:addSubMenu(root, submenu)
     local function send(command) return function() Cl.send(command, { vehicleId = id }) end end
+    if A.settings.sosContracts and entry.sosState ~= nil then
+        if entry.sosState == "open" and not entry.hostile then
+            option(submenu, L.ui("sos_accept", "SOS: cover the convoy's escape"), send("distress_help"))
+        elseif entry.sosOwner == A.playerKey(player) then
+            option(submenu, L.ui("sos_status", "SOS: rescue progress"), send("sos_status"))
+        end
+    end
     if not entry.halted then
         option(submenu, L.ui("hail", "Flag them down"), send("hail"))
     end

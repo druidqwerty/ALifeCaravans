@@ -16,6 +16,7 @@ require "ALifeCaravans/04_ALC_Convoy"
 require "ALifeCaravans/05_ALC_Trade"
 require "ALifeCaravans/ALC_Ledger"
 require "ALifeCaravans/ALC_Spawn"
+require "ALifeCaravans/ALC_SOSMonitor"
 
 local A = ALifeCaravans
 local D = { nextTickMs = 0, intervalMs = 2000, lastTickMs = nil, renderCooldownUntilMs = 0, publishAtMs = 0,
@@ -419,6 +420,7 @@ function D.found(now, players)
 end
 
 function D.retire(caravan, reason)
+    A.SOS.finish(caravan, false, "lost")
     if caravan.state == "rendered" or caravan.state == "rendering" or caravan.state == "fighting" or caravan.state == "stranded" then
         A.Spawn.teardown(caravan, "alc_retire")
     end
@@ -429,6 +431,7 @@ function D.retire(caravan, reason)
 end
 
 function D.release(caravan, reason)
+    A.SOS.onRelease(caravan, reason)
     local G = D.graph()
     local kept = A.Spawn.teardown(caravan, "alc_release")
     if G ~= nil and caravan.x ~= nil then D.snapProgress(G, caravan, caravan.x, caravan.y) end
@@ -693,6 +696,7 @@ function D.ambushTick(caravan, now, players)
         end
         ambush.state = "fighting"
         ambush.sinceMs = now
+        if A.SOS.start(caravan, now) then D.distressCheckAtMs = 0 end
         A.metrics.ambushes = A.metrics.ambushes + 1
         D.halt(caravan, 300, "ambush")
         local shell = D.driverShell(caravan)
@@ -850,6 +854,7 @@ function D.knownTable()
                 known[id] = { caravanId = caravan.id, index = index, name = caravan.name, callsign = caravan.callsign, leader = caravan.leaderName,
                     factionId = caravan.factionId, kind = caravan.kind, speedKmh = caravan.speedKmh, goals = goals, trip = caravan.trip or 1,
                     halted = caravan.halted == true, dest = caravan.destName, hostile = caravan.hostile == true, riders = caravan.riders == true,
+                    sosState = caravan.sos and caravan.sos.state, sosOwner = caravan.sos and caravan.sos.owner,
                     trade = caravan.stock ~= nil and #caravan.stock > 0, escort = caravan.escort ~= nil and caravan.escort.playerKey or nil }
             end
         end
@@ -867,6 +872,7 @@ function D.markerTable()
             markers[#markers + 1] = { id = caravan.id, name = caravan.name, callsign = caravan.callsign, kind = caravan.kind,
                 x = math.floor(caravan.x), y = math.floor(caravan.y), heading = G and D.heading(G, caravan) or 0,
                 state = caravan.state, halted = caravan.halted == true, dest = caravan.destName, cars = #(caravan.vehicles or {}) }
+            markers[#markers].sos = A.SOS.active(caravan)
         end
     end
     return markers
@@ -1279,7 +1285,10 @@ function D.tick()
     D.nextTickMs = now + D.intervalMs
     local dt = D.lastTickMs and math.min(10, (now - D.lastTickMs) / 1000) or 0
     D.lastTickMs = now
-    if not A.settings.enabled then return end
+    if not A.settings.enabled then
+        for _, caravan in ipairs(A.Ledger.list()) do A.SOS.tick(caravan, now, D.playerRows()) end
+        return
+    end
     local G = D.graph()
     if G == nil then return end
     local players = D.playerRows()
@@ -1293,6 +1302,8 @@ function D.tick()
     for _, caravan in ipairs(A.Ledger.list()) do
         local ok, err = pcall(D.step, G, caravan, now, dt, players)
         if not ok then A.fail("director step " .. tostring(caravan.id), err) end
+        local okSOS, errSOS = pcall(A.SOS.tick, caravan, now, players)
+        if not okSOS then A.fail("SOS " .. tostring(caravan.id), errSOS) end
         -- NEW FEATURE TICKS
         if caravan.state == "rendered" then
             pcall(D.scavengingTick, caravan, now, players)

@@ -450,14 +450,9 @@ function I.command(player, command, args)
         I.say(caravan, "farewell", player, vars)
         A.Director.publishDirty = true
     elseif command == "distress_help" then
-        if not caravan.distress then return end
-        -- Player responded to distress call
-        caravan.distress.helpers = caravan.distress.helpers or {}
-        caravan.distress.helpers[key] = A.now()
-        A.Ledger.addFavor(key, caravan.factionId, 5) -- Big reputation boost
-        I.say(caravan, "distress_help", player, vars)
-        I.reply(player, "distressHelpOk", { vehicleId = vehicleId, caravanId = caravan.id })
-        A.log(caravan.id, "player", key, "responded to distress call")
+        A.SOS.accept(caravan, player)
+    elseif command == "sos_status" then
+        A.SOS.status(caravan, player)
     elseif command == "recruit_npc" then
         if not A.settings.playerCanFormCaravan or caravan.state ~= "rendered" or not caravan.halted then return end
         local stance = I.stanceFor(caravan, player)

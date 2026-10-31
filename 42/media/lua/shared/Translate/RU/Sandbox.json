@@ -1,4 +1,10 @@
 {
+    "Sandbox_ALifeCaravans_SOSContracts": "Спасательное сопровождение SOS",
+    "Sandbox_ALifeCaravans_SOSContracts_tooltip": "Попавшие в засаду невраждебные караваны предлагают прикрыть отход. +3 расположения даются только за подтверждённый отход, не за принятие задания. Отключение отменяет активные SOS.",
+    "Sandbox_ALifeCaravans_SOSTimeoutMinutes": "Срок SOS, реальных минут",
+    "Sandbox_ALifeCaravans_SOSTimeoutMinutes_tooltip": "Время от начала засады до завершения спасения. Применяется к новым происшествиям; активные задания сохраняют свой срок.",
+    "Sandbox_ALifeCaravans_SOSEscapeTiles": "Дистанция отхода SOS, клеток",
+    "Sandbox_ALifeCaravans_SOSEscapeTiles_tooltip": "Сколько должен проехать уцелевший караван под управлением NPC после посадки с сопровождающим рядом. Также требуется не меньше 30 секунд движения. Для новых происшествий.",
     "Sandbox_ALifeCaravans": "A-Life: Caravans",
     "Sandbox_ALifeCaravans_Enabled": "Включить караваны",
     "Sandbox_ALifeCaravans_Enabled_tooltip": "Выкл.: новые караваны не появляются; те, что уже на дороге, доезжают. Применяется в течение 2 с, в том числе если админ меняет в идущей игре.",

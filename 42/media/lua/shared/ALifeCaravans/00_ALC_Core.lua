@@ -8,7 +8,7 @@ ALifeCaravans = ALifeCaravans or {}
 local A = ALifeCaravans
 
 A.MOD_ID = "ALifeCaravans"
-A.VERSION = "0.3.3"
+A.VERSION = "0.4.0"
 A.TAG = "[ALC]"
 A.MODULE = "ALifeCaravans"        -- client<->server command module name
 A.MODDATA_ID = "ALifeCaravanId"   -- vehicle ModData key (authoritative side only)
@@ -52,6 +52,9 @@ A.defaults = {
     nightTravelPenalty = 0.7,     -- speed multiplier at night
     factionReputationImpact = true, -- actions affect faction reputation more deeply
     distressCalls = true,         -- caravans can send distress signals
+    sosContracts = true,          -- verifiable rescue escort after an ambush
+    sosTimeoutMinutes = 10,
+    sosEscapeTiles = 80,
     livingWorld = true,           -- caravans interact with world (zombie hordes, player bases)
 }
 A.settings = A.settings or {}
@@ -230,6 +233,9 @@ function A.refreshSettings()
     s.nightTravelPenalty = A.clamp(sandbox.NightTravelPenalty, 0.3, 1.0, d.nightTravelPenalty)
     s.factionReputationImpact = sandbox.FactionReputationImpact ~= false
     s.distressCalls = sandbox.DistressCalls ~= false
+    s.sosContracts = sandbox.SOSContracts ~= false
+    s.sosTimeoutMinutes = A.clamp(sandbox.SOSTimeoutMinutes, 2, 30, d.sosTimeoutMinutes)
+    s.sosEscapeTiles = A.clamp(sandbox.SOSEscapeTiles, 40, 300, d.sosEscapeTiles)
     s.livingWorld = sandbox.LivingWorld ~= false
     return true
 end

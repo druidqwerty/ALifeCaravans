@@ -353,3 +353,31 @@ option ALifeCaravans.LivingWorld
 	page = ALifeCaravans,
 	translation = ALifeCaravans_LivingWorld,
 }
+
+option ALifeCaravans.SOSContracts
+{
+	type = boolean,
+	default = true,
+	page = ALifeCaravans,
+	translation = ALifeCaravans_SOSContracts,
+}
+
+option ALifeCaravans.SOSTimeoutMinutes
+{
+	type = integer,
+	min = 2,
+	max = 30,
+	default = 10,
+	page = ALifeCaravans,
+	translation = ALifeCaravans_SOSTimeoutMinutes,
+}
+
+option ALifeCaravans.SOSEscapeTiles
+{
+	type = integer,
+	min = 40,
+	max = 300,
+	default = 80,
+	page = ALifeCaravans,
+	translation = ALifeCaravans_SOSEscapeTiles,
+}
