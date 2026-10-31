@@ -10,10 +10,10 @@ a reward, pay a raider's toll, or threaten them and see what the faction does. P
 and none of its code is copied; this is a separate Lua mod built on A-Life's public NPC driving, arrival and speech
 functions.
 
-> **Test version 0.2.0.** The simulation suite (112 checks) passes and the mod loads and runs on a real dedicated
-> server with A-Life (see "How it was tested"); it has not been played through a long session. It is out so players
-> can test it: please report bugs (what the caravan did + your `Zomboid/console.txt`) in the Steam comments or the
-> Issues here. Multiplayer hand-off and the trade window are the least tested parts.
+> **Test version 0.3.3.** The 115-check simulation suite passes and a real PZ client loads the mod without
+> Caravans/Lua errors (see "How it was tested"). The new map icons have not been visually checked inside a world yet.
+> Please report bugs (what the caravan did + your `Zomboid/console.txt`) in the Steam comments or the Issues here.
+> Multiplayer hand-off and the trade window are the least tested parts.
 
 **Steam Workshop:** https://steamcommunity.com/sharedfiles/filedetails/?id=3829571361 · **Source code (MIT):** https://github.com/druidqwerty/ALifeCaravans
 
@@ -37,8 +37,8 @@ Free and open source. The code is written by an AI; the direction, the testing a
   a free stretch of road at least 45 tiles away, the crew sits inside, and the convoy drives on at 35 km/h (soldiers 30,
   raiders 40). Beyond 170 tiles from every player it goes back into the ledger and continues its trip there.
 - **On your map.** Every caravan, in the ledger or on the road, is a marker on the world map (M) and the minimap: a
-  square in the colour of its kind, a heading tick, the callsign; a white ring when it is real, a dot when it waits.
-  Positions update every few seconds and move smoothly. Each player can turn the markers off (Options > Mods).
+  small top-down car in the colour of its kind, a heading tick and the callsign; headlights when it is real, a dot
+  when it waits. Positions update every few seconds and move smoothly. Each player can turn the markers off (Options > Mods).
 - **Convoys keep formation.** Three or four cars are placed in two A-Life units, the second behind the first.
   Followers slow down and stop behind the car ahead; the leader slows for a straggler ("Close up!") and every car parks
   when the caravan is halted and leaves again a little after the car ahead.
@@ -120,10 +120,10 @@ trade notices, markers on the world map, on the minimap, marker labels.
 
 ## Is it working?
 
-`Zomboid/console.txt` has `[ALC] v0.2.0 installed (singleplayer|server|client)` after the world loads, then
+`Zomboid/console.txt` has `[ALC] v0.3.3 installed (singleplayer|server|client)` after the world loads, then
 `[ALC] founded caravan:1 <faction> <callsign> (...)` and `[ALC] on the road: caravan:1 ...` when one appears near
 you, and a counters line every 5 minutes (`founded=… rendered=… hails=… trades=… recrews=…`). Open the map (M): the
-caravans are the coloured squares with callsigns. With the Debug sandbox option on, every founding, rendering and
+caravans are the small coloured car icons with callsigns. With the Debug sandbox option on, every founding, rendering and
 route step is logged. `ALifeCaravans.status()` in the Lua console prints the ledger.
 
 ## How it works (for modders)
@@ -162,7 +162,7 @@ route step is logged. `ALifeCaravans.status()` in the Lua console prints the led
 ## How it was tested
 
 - `python -I tools/run_test.py` — the lupa simulation (stubs of A-Life's driving/arrival/catalog/registry/speech/radio
-  APIs and of the game): 112 checks over the whole lifecycle, every interaction, formation, stuck recovery, re-crewing,
+  APIs and of the game): 115 checks over the whole lifecycle, every interaction, formation, stuck recovery, re-crewing,
   abandonment, ambushes, radio, riders, release, the 0.1.0 ledger migration, translations.
 - `python -I tools/pz_loadcheck.py start` / `wait` — the real game at the main menu with A-Life and this mod: Lua,
   Sandbox page and translations load (this is how the Java-format `%` bug of 0.1.0 was found).
@@ -186,6 +186,8 @@ route step is logged. `ALifeCaravans.status()` in the Lua console prints the led
 
 ## Changelog
 
+- 0.3.3 (2026-10-31) — replaced square caravan markers with small top-down car icons on the world map and minimap;
+  kind colours, headings, callsigns and smooth offline/live movement are preserved. Added icon geometry regressions.
 - 0.3.2 (2026-10-31) — removed Kahlua-unsupported `goto`/labels from the director (the file failed to compile at
   `ALC_Director.lua:1119`), and removed an unsupported comment from `sandbox-options.txt`. Added regressions for
   both engine-specific syntax checks. Verified with the offline suite and a real dedicated-server startup.

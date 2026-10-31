@@ -1,7 +1,7 @@
 -- A-Life: Caravans - map markers (client). Every caravan (in the ledger or on
--- the road) is drawn on the vanilla world map and on the minimap: a coloured
--- square by kind, a heading tick, a label with the callsign. Positions arrive
--- with the "state" command every few seconds and are interpolated so the dots
+-- the road) is drawn on the vanilla world map and on the minimap: a small
+-- top-down car coloured by kind, a heading tick, a label with the callsign. Positions arrive
+-- with the "state" command every few seconds and are interpolated so the icons
 -- move smoothly. Drawn after the map's own render, in the map's coordinates
 -- (mapAPI:worldToUIX/Y), the same way A-Life's squad overlay does it.
 
@@ -56,6 +56,48 @@ local function kindLabel(kind)
     return A.Lines.ui("kind_" .. tostring(kind), tostring(kind))
 end
 
+-- Pixel silhouette of a car seen from above. Keeping this as rectangles avoids
+-- a texture dependency and makes the marker crisp at every map zoom. The glass
+-- is cut out in dark colour so the result reads as a car rather than a square.
+function M.drawCar(element, cx, cy, color, size, live, halted)
+    local small = (size or 5) <= 3
+    local outer, body, glass
+    if small then
+        outer = {
+            { -2, -3, 4, 6 }, { -1, -4, 2, 1 }, { -1, 3, 2, 1 },
+            { -3, -2, 1, 2 }, { 2, -2, 1, 2 }, { -3, 1, 1, 2 }, { 2, 1, 1, 2 },
+        }
+        body = { { -1, -2, 2, 4 } }
+        glass = { { -1, -1, 2, 1 }, { -1, 1, 2, 1 } }
+    else
+        outer = {
+            { -3, -5, 6, 10 }, { -2, -6, 4, 1 }, { -2, 5, 4, 1 },
+            { -4, -3, 1, 3 }, { 3, -3, 1, 3 }, { -4, 2, 1, 3 }, { 3, 2, 1, 3 },
+        }
+        body = { { -2, -4, 4, 8 }, { -1, -5, 2, 1 }, { -1, 4, 2, 1 } }
+        glass = { { -2, -2, 4, 2 }, { -2, 2, 4, 1 } }
+    end
+    for _, rect in ipairs(outer) do
+        element:drawRect(cx + rect[1], cy + rect[2], rect[3], rect[4], 0.96, 0.04, 0.04, 0.04)
+    end
+    for _, rect in ipairs(body) do
+        element:drawRect(cx + rect[1], cy + rect[2], rect[3], rect[4], 0.98, color[1], color[2], color[3])
+    end
+    for _, rect in ipairs(glass) do
+        element:drawRect(cx + rect[1], cy + rect[2], rect[3], rect[4], 0.95, 0.08, 0.10, 0.12)
+    end
+    if live then
+        if small then
+            element:drawRect(cx - 1, cy - 3, 1, 1, 1, 1, 1, 1)
+            element:drawRect(cx, cy - 3, 1, 1, 1, 1, 1, 1)
+        else
+            element:drawRect(cx - 2, cy - 5, 1, 1, 1, 1, 1, 1)
+            element:drawRect(cx + 1, cy - 5, 1, 1, 1, 1, 1, 1)
+        end
+    end
+    if halted then element:drawRect(cx - 1, cy - 1, 2, 2, 1, 0.04, 0.04, 0.04) end
+end
+
 -- Draw every marker on a map element with the given map API (world -> UI).
 function M.drawOn(element, api, labels, size)
     if element == nil or api == nil or type(api.worldToUIX) ~= "function" then return 0 end
@@ -72,10 +114,7 @@ function M.drawOn(element, api, labels, size)
                 sx, sy = math.floor(sx + 0.5), math.floor(sy + 0.5)
                 local color = M.colorOf(marker.kind)
                 local live = marker.state == "rendered" or marker.state == "rendering" or marker.state == "fighting"
-                element:drawRect(sx - half - 1, sy - half - 1, half * 2 + 2, half * 2 + 2, 0.9, 0.05, 0.05, 0.05)
-                element:drawRect(sx - half, sy - half, half * 2, half * 2, 0.95, color[1], color[2], color[3])
-                if live then element:drawRectBorder(sx - half - 3, sy - half - 3, half * 2 + 6, half * 2 + 6, 0.9, 1, 1, 1) end
-                if marker.halted then element:drawRect(sx - 1, sy - 1, 2, 2, 1, 0.05, 0.05, 0.05) end
+                M.drawCar(element, sx, sy, color, half, live, marker.halted)
                 -- heading tick
                 local hx, hy = math.cos(marker.heading), math.sin(marker.heading)
                 for step = half + 2, half + 6 do

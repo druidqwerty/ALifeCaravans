@@ -526,6 +526,22 @@ function fakeMap:drawRectBorder() self.drawn = self.drawn + 1 end
 function fakeMap:drawText() self.drawn = self.drawn + 1 end
 ISWorldMap.render(fakeMap)
 check("marker drawn on the world map", fakeMap.rendered == 1 and fakeMap.drawn > 5, fakeMap.drawn)
+local carProbe = { rects = {} }
+function carProbe:drawRect(x, y, w, h) self.rects[#self.rects + 1] = { x = x, y = y, w = w, h = h } end
+Map.drawCar(carProbe, 100, 100, { 1, 0.5, 0.2 }, 5, true, false)
+check("world map marker is a detailed car silhouette", #carProbe.rects >= 14 and #carProbe.rects <= 20, #carProbe.rects)
+check("car silhouette stays small", (function()
+    local minX, maxX, minY, maxY = 1000, -1000, 1000, -1000
+    for _, r in ipairs(carProbe.rects) do
+        minX, maxX = math.min(minX, r.x), math.max(maxX, r.x + r.w)
+        minY, maxY = math.min(minY, r.y), math.max(maxY, r.y + r.h)
+    end
+    return maxX - minX <= 9 and maxY - minY <= 13
+end)())
+local miniProbe = { rects = {} }
+function miniProbe:drawRect(x, y, w, h) self.rects[#self.rects + 1] = { x = x, y = y, w = w, h = h } end
+Map.drawCar(miniProbe, 50, 50, { 1, 0.5, 0.2 }, 3, false, false)
+check("minimap uses a smaller car icon", #miniProbe.rects >= 10 and #miniProbe.rects < #carProbe.rects, #miniProbe.rects)
 check("interpolated position moves", (function() local x1 = Map.positionOf(Map.markers[caravan.id], CLOCK) return x1 ~= nil end)())
 
 -- 9. rendering: four cars in two units
