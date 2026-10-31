@@ -7,15 +7,15 @@ faction caravans and convoys of up to four cars drive the roads between towns at
 you can catch up in your own car. Far from everyone they travel fast in a ledger and show on your map; near you they
 are real cars with real crews. Flag them down, ask for news, barter goods, hitch a ride to their town, escort them for
 a reward, pay a raider's toll, or threaten them and see what the faction does. Project A-Life itself is not changed
-and none of its code is copied; this is a separate Lua mod built on A-Life's public NPC driving, arrival and speech
-functions.
+and none of its code is copied; this is a separate mod built on A-Life's public NPC driving, arrival and speech
+functions, with a small ZombieBuddy Java bridge for NPC vehicle brake release.
 
-> **Experimental pre-release 0.4.0 — GitHub only. Steam remains on 0.3.3.** All 148 simulation checks pass,
-> but the complete SOS escape did not pass live testing. In SP, A-Life 1.4.6's physics-authority check blocked
-> boarding; in local MP, an unseated crew member obstructed the car. Acceptance gave no early reward.
-> Successful escape and its payout remain unverified. See [the test report](TEST_0.4.0.md).
-> Please report bugs (what the caravan did + your `Zomboid/console.txt`) in the Steam comments or the Issues here.
-> Multiplayer hand-off and the trade window are the least tested parts.
+> **0.4.1 — SOS multiplayer release.** 180 simulation checks pass. A controlled real MP run completed
+> the rescue: 49.33 tiles / 30.799 seconds, +3 favor once, duplicate reward rejected. Test distance was40
+> (default80), with scripted attacker clearance. See [the report](TEST_0.4.1.md).
+> **New requirement: ZombieBuddy with its Java agent installed.** SP boarding with A-Life1.4.6 remains
+> blocked in the tested setup; this is an MP-targeted fix, not an SP compatibility release.
+> Multi-client handoff, full trade/rider gameplay and long sessions still need broader live coverage.
 
 **Steam Workshop:** https://steamcommunity.com/sharedfiles/filedetails/?id=3829571361 · **Source code (MIT):** https://github.com/druidqwerty/ALifeCaravans
 
@@ -98,6 +98,9 @@ when stuck, crews seated inside, and in multiplayer A-Life's hand-off of the car
 ## Requirements
 
 - Build 42.21+.
+- 0.4.1 requires [ZombieBuddy](https://steamcommunity.com/sharedfiles/filedetails/?id=3619862853)
+  with its Java agent installed according to its instructions, on clients and server. Subscription alone is not enough.
+  Experimental mode is not required.
 - [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sharedfiles/filedetails/?id=3803984183) 1.4.6+ with
   its "A-Life Driving" sandbox options enabled (the default).
 - [A-Life: Factions Expanded](https://steamcommunity.com/sharedfiles/filedetails/?id=3813871509) is optional, but
@@ -111,8 +114,8 @@ without a passenger seat are skipped. Trailers are not towed (A-Life's driving d
 
 ## Installation
 
-1. Steam currently supplies **0.3.3**, not the experimental SOS update. Enable **A-Life: Caravans** after Project A-Life.
-2. On a server add `ALifeCaravans` to `Mods=` (after `ProjectALifeNPCs`).
+1. Install ZombieBuddy and its Java agent, then enable **A-Life: Caravans** after ZombieBuddy and Project A-Life.
+2. On a server load `ZombieBuddy;ProjectALifeNPCs;ALifeCaravans` in that order and install the ZombieBuddy agent. All clients need the same requirements.
 3. Without Steam: unpack the zip to `%USERPROFILE%\Zomboid\mods\` (→ `mods\ALifeCaravans\42\mod.info`).
 4. Updating from 0.1.0: saves are kept; the ledger is migrated (old stock, new fields) at the first start.
 
@@ -130,7 +133,7 @@ trade notices, markers on the world map, on the minimap, marker labels.
 
 ## Is it working?
 
-`Zomboid/console.txt` has `[ALC] v0.4.0 installed (singleplayer|server|client)` after the world loads, then
+`Zomboid/console.txt` has `[ALC] v0.4.1 installed (singleplayer|server|client)` after the world loads, then
 `[ALC] founded caravan:1 <faction> <callsign> (...)` and `[ALC] on the road: caravan:1 ...` when one appears near
 you, and a counters line every 5 minutes (`founded=… rendered=… hails=… trades=… recrews=…`). Open the map (M): the
 caravans are the small coloured car icons with callsigns. With the Debug sandbox option on, every founding, rendering and
@@ -174,7 +177,8 @@ route step is logged. `ALifeCaravans.status()` in the Lua console prints the led
 - `python -I tools/run_test.py` — the lupa simulation (stubs of A-Life's driving/arrival/catalog/registry/speech/radio
   APIs and of the game): **148 checks** over the lifecycle, interactions, formation, re-crewing, ambushes, radio,
   riders, migrations, SOS ownership/progress/failure/replay and the B42.21 notice overload. EN/RU keys also match.
-- **0.4.0 live gate: BLOCKED.** SP and local MP opened/accepted SOS without an early reward. SP boarding
+- **0.4.1 live gate: PASS, controlled MP.** Two NPCs reboarded; real escape, +3 favor once and duplicate rejection verified. New native brake bridge requires ZombieBuddy. See [TEST_0.4.1.md](TEST_0.4.1.md).
+- **Historical 0.4.0 live gate: BLOCKED.** SP and local MP opened/accepted SOS without an early reward. SP boarding
   was blocked by the A-Life physics-authority check. In the final MP road scenario, an unseated crew member
   obstructed the car; after 180 seconds the observer recorded zero qualifying distance/time, favor 0 and no
   receipt. Successful escape/payout was not verified. No test is still running. See [TEST_0.4.0.md](TEST_0.4.0.md).
@@ -205,6 +209,7 @@ route step is logged. `ALifeCaravans.status()` in the Lua console prints the led
 
 ## Changelog
 
+- 0.4.1 (2026-10-31) — fixed seated-driver/on-foot-passenger quota, retained native parked brakes and trailers/wrecks bypassing vehicle validation. Added the original ZombieBuddy Java bridge; controlled MP SOS passed. SP limitation remains.
 - 0.4.0 (2026-10-31) — persistent SOS rescue escorts after ambushes; server-observed moving NPC convoy escape,
   one-owner claims, exactly-once favor, timeout/failure handling, menu/map state and EN/RU Sandbox controls.
   Removed free favor for merely answering distress; fixed B42.21 notice overload. 148 simulation checks pass;

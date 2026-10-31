@@ -459,6 +459,12 @@ check("new toggles", A.settings.escortContracts and A.settings.radioChatter and 
 -- 3. vehicles
 local scan = Vehicles.scan(true)
 check("scan drops wrecks and trailers", scan.byName["Base.CarNormalBurnt"] == nil and scan.byName["Base.Trailer"] == nil)
+check("direct validation rejects loaded trailers", not Vehicles.valid("Base.Trailer"))
+check("direct validation rejects loaded wrecks", not Vehicles.valid("Base.CarNormalBurnt"))
+VehicleZoneDistribution.fixture = {vehicles = {['Base.Trailer']={spawnChance=100}, ['Base.CarNormalBurnt']={spawnChance=100}, ['Base.CarNormal']={spawnChance=1}}}
+local safeZone = Vehicles.fromZones({'fixture'})
+check("zone distributions cannot bypass vehicle validation", #safeZone == 1 and safeZone[1].name == 'Base.CarNormal')
+VehicleZoneDistribution.fixture = nil
 check("class from bloc military", Vehicles.classFor(ProjectALife.Catalog.faction("f_army")) == "military")
 local convoy, seats = Vehicles.convoy("military", 6, 4)
 check("four-car convoy for a big crew", #convoy >= 2 and seats >= 6, #convoy .. "/" .. seats)
@@ -725,6 +731,8 @@ check("car without fuel abandoned", #caravan.vehicleIds == 3 and caravan.abandon
 caravan.ambush = { kind = "zombies", goalIndex = 2, state = "armed", x = caravan.x + 30, y = caravan.y }
 caravan.halted = nil
 PLAYER.x, PLAYER.y = caravan.x + 20, caravan.y
+-- Dismounted fixture must clear BOTH sides of the engine seat relationship.
+for _, id in ipairs(caravan.vehicleIds) do VEHICLES[id].passengers = {} end
 for _, uid in ipairs(caravan.actorUids) do if SHELLS[uid] and not SHELLS[uid].dead then SHELLS[uid].vehicle = nil end end
 ZOMBIES = { { getX = function() return caravan.x + 5 end, getY = function() return caravan.y end, getZ = function() return 0 end, isDead = function() return false end, getModData = function() return {} end } }
 Director.ambushTick(caravan, CLOCK, Director.playerRows())
@@ -837,6 +845,8 @@ check("status runs", pcall(A.status))
 check("no errors counted", A.metrics.errors == 0, A.metrics.errors)
 
 assert(loadfile(MOD_ROOT .. "/tools/test_sos.lua"))()(check, newContext)
+assert(loadfile(MOD_ROOT .. "/tools/test_recrew.lua"))()(check, newVehicle)
+assert(loadfile(MOD_ROOT .. "/tools/test_physics.lua"))()(check)
 local noticeCount = #NOTICES
 Client.notice("B42.21 notice overload regression")
 check("notice uses the verified B42.21 HaloTextHelper overload", #NOTICES == noticeCount + 1)

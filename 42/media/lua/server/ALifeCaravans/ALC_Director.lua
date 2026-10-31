@@ -619,9 +619,10 @@ function D.recrewTick(caravan, now)
         if row.inCar == nil then free = free + 1 end
     end
     local limit = math.max(1, math.ceil(free / pending))
+    local reserved = {}
     for key, request in pairs(caravan.recrew or {}) do
         if now >= (request.dueMs or 0) then
-            local ok, detail = A.Spawn.recrew(caravan, request.vehicleId, nil, limit)
+            local ok, detail = A.Spawn.recrew(caravan, request.vehicleId, nil, limit, reserved)
             if ok then
                 caravan.recrew[key] = nil
                 A.log(caravan.id, "car", request.vehicleId, "re-crewed with", detail, "NPC(s)")

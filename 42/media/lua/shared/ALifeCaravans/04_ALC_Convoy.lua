@@ -15,6 +15,7 @@
 require "ALifeCaravans/00_ALC_Core"
 require "ALifeCaravans/01_ALC_Lines"
 require "ALifeCaravans/03_ALC_Roads"
+require "ALifeCaravans/06_ALC_Physics"
 
 local A = ALifeCaravans
 local C = { known = {}, nextTickMs = 0, intervalMs = 600, goalReach = 22, lowQueue = 2, restartDelayMs = 3000,
@@ -272,6 +273,7 @@ function C.tickOne(group, position, now)
     if s.exitAt or s.exitRequested or s.detaching then return end
     local vehicle = s.vehicle
     if vehicle == nil then return end
+    A.Physics.prepare(s, entry)
     if entry.halted then
         if s.phase == "driving" and not s.braking then C.stop(s, "caravan halted") end
         if s.phase == "seated" then entry.parkedAt = entry.parkedAt or now end

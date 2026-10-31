@@ -481,10 +481,10 @@ function S.survivors(caravan, x, y, radius)
 end
 
 -- Put a crew back into a car: the survivors walk to the car, board it (a new
--- driver on seat 0) and drive the caravan's route on. `limit` caps the crew of
--- this car so the survivors are shared between the cars being re-crewed.
+-- driver on seat 0) and drive the caravan's route on. `limit` caps additional
+-- on-foot survivors; already seated crew do not consume this shared quota.
 -- Returns true when the boarding session was created.
-function S.recrew(caravan, vehicleId, route, limit)
+function S.recrew(caravan, vehicleId, route, limit, reserved)
     local p = P()
     local car = type(getVehicleById) == "function" and getVehicleById(vehicleId) or nil
     if car == nil or p == nil or p.DrivingLifecycle == nil or p.DrivingTuning == nil then return false, "no_car" end
@@ -495,24 +495,41 @@ function S.recrew(caravan, vehicleId, route, limit)
     local free = {}
     for _, row in ipairs(candidates) do
         local other = row.inCar
-        if other == nil or other == car then free[#free + 1] = row end
+        if other == car or (other == nil and not (reserved and reserved[row.uid])) then free[#free + 1] = row end
     end
     if #free == 0 then return false, "no_survivors" end
-    local seats = {}
-    pcall(function()
+    local seats, crew, assigned = {}, {}, {}
+    local seatsOK = pcall(function()
         for seat = 0, math.min(15, car:getMaxPassengers() - 1) do
-            if car:isSeatInstalled(seat) and (car:getCharacter(seat) == nil or not instanceof(car:getCharacter(seat), "IsoPlayer")) then
-                seats[#seats + 1] = seat
+            if car:isSeatInstalled(seat) then
+                local occupant = car:getCharacter(seat)
+                if occupant == nil then seats[#seats + 1] = seat
+                else
+                    for _, row in ipairs(free) do
+                        if row.inCar == car and row.npc == occupant then
+                            crew[#crew + 1] = { uid = row.uid, generation = row.generation, seat = seat }
+                            assigned[row.uid] = true
+                            break
+                        end
+                    end
+                end
             end
         end
     end)
-    if seats[1] ~= 0 then return false, "no_driver_seat" end
-    local crew = {}
-    local cap = math.max(1, math.min(#seats, math.floor(tonumber(limit) or #seats)))
-    for index, row in ipairs(free) do
-        if index > cap then break end
-        crew[#crew + 1] = { uid = row.uid, generation = row.generation, seat = seats[index] }
+    if not seatsOK then return false, "seat_query_failed" end
+    -- limit is a quota of ON-FOOT survivors, not total crew. Keep seated
+    -- identities in their real seats; never replace a player or unrelated NPC.
+    local cap = math.max(0, math.min(#seats, math.floor(tonumber(limit) or #seats)))
+    local added = 0
+    for _, row in ipairs(free) do
+        if added < cap and row.inCar == nil and not assigned[row.uid] then
+            added = added + 1
+            crew[#crew + 1] = { uid = row.uid, generation = row.generation, seat = seats[added] }
+            assigned[row.uid] = true
+        end
     end
+    table.sort(crew, function(a, b) return a.seat < b.seat end)
+    if crew[1] == nil or crew[1].seat ~= 0 then return false, "no_driver_seat" end
     S.releaseCar(vehicleId)
     local owner = p.VehicleArrivals.owner()
     if owner == nil then return false, "no_owner" end
@@ -573,6 +590,7 @@ function S.recrew(caravan, vehicleId, route, limit)
     end
     if p.DrivingMultiplayer ~= nil then p.DrivingMultiplayer.broadcastAt = 0 end
     A.metrics.recrews = A.metrics.recrews + 1
+    if reserved then for _, member in ipairs(crew) do reserved[member.uid] = true end end
     return true, #crew
 end
 

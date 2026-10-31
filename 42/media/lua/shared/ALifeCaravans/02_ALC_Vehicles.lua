@@ -105,10 +105,11 @@ function V.row(name)
 end
 
 function V.valid(name)
-    if type(name) ~= "string" then return false end
+    if type(name) ~= "string" or badName(name) then return false end
     if V.row(name) ~= nil then return true end
     local ok, script = pcall(function() return getScriptManager():getVehicle(name) end)
-    return ok and script ~= nil
+    return ok and script ~= nil and numberOf(script, "getPassengerCount", 0) >= 2
+        and numberOf(script, "getWheelCount", 0) >= 4
 end
 
 function V.seats(name)
