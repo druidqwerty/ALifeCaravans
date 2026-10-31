@@ -4,9 +4,8 @@
 -- toll. Reactions follow A-Life's stance of the crew toward the player
 -- (friendly / neutral / careful / hostile), the caravan's class (traders fold
 -- or flee, soldiers and raiders fight) and the player's favor with the faction.
--- Trades are server-authoritative: the server quotes and reserves, the client
--- moves the items in its own inventory exactly once per transaction id, the
--- server commits on the acknowledgement or rolls the reservation back.
+-- Trades are server-authoritative: the server validates and exchanges actual
+-- inventory objects, replicates the result, then sends a display-only receipt.
 
 require "ALifeCaravans/00_ALC_Core"
 require "ALifeCaravans/01_ALC_Lines"
@@ -77,8 +76,9 @@ function I.caravanOf(args)
 end
 
 function I.within(player, caravan)
-    local px, py = A.xyz(player)
+    local px, py, pz = A.xyz(player)
     if px == nil or caravan.x == nil then return false end
+    if math.floor(tonumber(pz) or 0) ~= 0 then return false end
     if A.dist(px, py, caravan.x, caravan.y) <= I.reach then return true end
     -- a rider is always "with" the caravan
     for _, id in ipairs(caravan.vehicleIds or {}) do
@@ -96,11 +96,18 @@ function I.say(caravan, situation, player, vars, cooldownMs)
 end
 
 function I.reply(player, command, args)
+    if command == "gift" and args.delivered ~= true then
+        local ok = T.exchange(player, { giveRows = {}, takeRows = { { item = args.item, count = args.count or 1 } } })
+        if not ok then return false end
+        args.delivered = true
+    end
+    args.playerNum = player and player:getPlayerNum() or 0
     if A.side() == "server" then
         pcall(sendServerCommand, player, A.MODULE, command, args)
     elseif A.Client ~= nil and type(A.Client.receive) == "function" then
         pcall(A.Client.receive, A.MODULE, command, args)
     end
+    return true
 end
 
 function I.vars(caravan, player)
@@ -123,6 +130,9 @@ end
 
 function I.fight(caravan, player, situation)
     local px, py = A.xyz(player)
+    -- Direct aggression supersedes a scripted ambush; otherwise its rendered-
+    -- only state machine and the generic fight watchdog can both stop running.
+    caravan.ambush = nil
     caravan.state = "fighting"
     caravan.fightingAtMs = A.now()
     A.Director.resume(caravan)
@@ -203,7 +213,7 @@ function I.hail(caravan, player, viaHorn)
 end
 
 -- Stock rows with the prices this player pays (and what the caravan pays).
-function I.stockView(caravan, player)
+function I.stockView(caravan, player, vehicleId)
     local key = A.playerKey(player)
     local favor = A.Ledger.favor(key, caravan.factionId)
     local rows = {}
@@ -212,7 +222,8 @@ function I.stockView(caravan, player)
             rows[#rows + 1] = { index = index, item = row.item, name = row.name, count = row.count, price = T.sellPrice(row, caravan.kind, favor) }
         end
     end
-    return { vehicleId = nil, rows = rows, kind = caravan.kind, favor = favor, buyRate = T.rateFor(caravan.kind).buy, currency = T.currency,
+    return { vehicleId = vehicleId or (caravan.vehicleIds and caravan.vehicleIds[1]), revision = caravan.stockRevision or 0,
+        rows = rows, kind = caravan.kind, favor = favor, buyRate = T.rateFor(caravan.kind).buy, currency = T.currency,
         leader = caravan.leaderName, callsign = caravan.callsign }
 end
 
@@ -225,11 +236,17 @@ function I.canTrade(caravan, player)
     return true
 end
 
--- A deal: validate against the live stock, reserve it, let the client move the items.
+-- A deal is synchronous on the world owner. Stock revisions reject a stale
+-- window/double click before stock indexes can point at different goods.
 function I.deal(caravan, player, vehicleId, args)
     local ok, why = I.canTrade(caravan, player)
     if not ok then I.say(caravan, why, player, I.vars(caravan, player)) I.reply(player, "dealRefused", { vehicleId = vehicleId, reason = why }) return end
     local key = A.playerKey(player)
+    if args.revision ~= nil and args.revision ~= (caravan.stockRevision or 0) then
+        I.reply(player, "dealRefused", { vehicleId = vehicleId, reason = "stale_stock" })
+        I.reply(player, "stock", I.stockView(caravan, player, vehicleId))
+        return
+    end
     local favor = A.Ledger.favor(key, caravan.factionId)
     local quote = T.quote(caravan.stock or {}, caravan.kind, favor, args.take, args.give)
     if not quote.ok then
@@ -237,54 +254,26 @@ function I.deal(caravan, player, vehicleId, args)
         I.reply(player, "dealRefused", { vehicleId = vehicleId, reason = quote.reason })
         return
     end
-    caravan.pending = caravan.pending or {}
-    for id, entry in pairs(caravan.pending) do
-        if A.now() > entry.expiresMs then caravan.pending[id] = nil end
-    end
-    -- one open reservation per player; the stock counts already reserved stay out of reach
-    for id, entry in pairs(caravan.pending) do
-        if entry.playerKey == key then caravan.pending[id] = nil end
-    end
-    for _, row in ipairs(quote.takeRows) do
-        local reserved = 0
-        for _, entry in pairs(caravan.pending) do
-            for _, other in ipairs(entry.quote.takeRows) do
-                if other.index == row.index then reserved = reserved + other.count end
-            end
-        end
-        local stockRow = caravan.stock[row.index]
-        if stockRow == nil or stockRow.count - reserved < row.count then
-            I.reply(player, "dealRefused", { vehicleId = vehicleId, reason = "out_of_stock" })
-            return
-        end
-    end
+    local exchanged, reason = T.exchange(player, quote)
+    if not exchanged then I.reply(player, "dealRefused", { vehicleId = vehicleId, reason = reason }) return end
+    T.commit(caravan.stock, quote)
+    caravan.stockRevision = (caravan.stockRevision or 0) + 1
     I.txSerial = I.txSerial + 1
     local txId = tostring(caravan.id) .. ":" .. tostring(I.txSerial) .. ":" .. tostring(A.now())
-    caravan.pending[txId] = { quote = quote, playerKey = key, expiresMs = A.now() + I.reservationMs }
-    I.reply(player, "dealOk", { vehicleId = vehicleId, txId = txId, take = quote.takeRows, give = quote.giveRows, currency = T.currency,
+    I.reply(player, "dealReceipt", { vehicleId = vehicleId, txId = txId, take = quote.takeRows, give = quote.giveRows, currency = T.currency,
         cost = quote.cost, credit = quote.credit })
-end
-
-function I.dealDone(caravan, player, vehicleId, args)
-    local txId = tostring(args.txId or "")
-    local entry = caravan.pending and caravan.pending[txId] or nil
-    if entry == nil then return end
-    caravan.pending[txId] = nil
-    if entry.playerKey ~= A.playerKey(player) then return end
-    if args.ok ~= true then
-        I.say(caravan, "trade_broke", player, I.vars(caravan, player))
-        return
-    end
-    T.commit(caravan.stock, entry.quote)
     A.metrics.trades = A.metrics.trades + 1
-    if #entry.quote.giveRows > 0 and entry.quote.giveRows[1].type ~= T.currency then A.metrics.barters = A.metrics.barters + 1 end
-    if entry.quote.cost >= 20 or entry.quote.credit >= 20 then A.Ledger.addFavor(entry.playerKey, caravan.factionId, 1) end
+    if #quote.giveRows > 0 and quote.giveRows[1].type ~= T.currency then A.metrics.barters = A.metrics.barters + 1 end
+    if quote.cost >= 20 or quote.credit >= 20 then A.Ledger.addFavor(key, caravan.factionId, 1) end
     local vars = I.vars(caravan, player)
-    vars.item = entry.quote.takeRows[1] and entry.quote.takeRows[1].name or (entry.quote.giveRows[1] and entry.quote.giveRows[1].name) or "goods"
+    vars.item = quote.takeRows[1] and quote.takeRows[1].name or (quote.giveRows[1] and quote.giveRows[1].name) or "goods"
     I.say(caravan, "trade_done", player, vars)
-    I.reply(player, "stock", I.stockView(caravan, player))
+    I.reply(player, "stock", I.stockView(caravan, player, vehicleId))
     A.Ledger.touch()
 end
+
+-- Old client acknowledgements cannot grant items, favor, or a truce.
+function I.dealDone() end
 
 function I.escortReward(caravan, players)
     local escort = caravan.escort
@@ -309,7 +298,7 @@ function I.escortReward(caravan, players)
 end
 
 function I.command(player, command, args)
-    if player == nil or type(command) ~= "string" then return end
+    if not A.authority() or player == nil or type(command) ~= "string" or player:isDead() then return end
     if command == "stateRequest" then A.Director.sendState(player) return end
     local caravan, vehicleId = I.caravanOf(args)
     if caravan == nil then return end
@@ -350,13 +339,13 @@ function I.command(player, command, args)
         A.metrics.rides = A.metrics.rides + 1
         A.Director.publishDirty = true
     elseif command == "wait" then
-        if not caravan.halted then return end
+        if caravan.state ~= "rendered" or not caravan.halted or I.stanceFor(caravan, player) == "hostile" then return end
         caravan.waits = (caravan.waits or 0) + 1
         if caravan.waits > 2 then I.say(caravan, "wait_no", player, vars) return end
         A.Director.halt(caravan, A.settings.haltSeconds, "wait")
         I.say(caravan, "wait_ok", player, vars)
     elseif command == "farewell" then
-        if not caravan.halted then return end
+        if caravan.state ~= "rendered" or not caravan.halted or I.stanceFor(caravan, player) == "hostile" then return end
         A.Director.resume(caravan)
         I.say(caravan, "farewell", player, vars)
     elseif command == "escort" then
@@ -374,6 +363,9 @@ function I.command(player, command, args)
         if I.fights(caravan) then
             I.fight(caravan, player, caravan.kind == "raid" and "threat_laugh" or "threat_fight")
         else
+            caravan.extorted = caravan.extorted or {}
+            if caravan.extorted[key] then I.flee(caravan, player, nil) return end
+            caravan.extorted[key] = true
             local gift = nil
             for index, row in ipairs(caravan.stock or {}) do
                 if row.count > 0 then gift = { index = index, row = row } break end
@@ -388,36 +380,28 @@ function I.command(player, command, args)
     elseif command == "toll" then
         local due = caravan.toll and caravan.toll[key]
         if due == nil or A.now() > due then return end
+        local paid = T.exchange(player, { takeRows = {}, giveRows = { { type = T.currency, count = I.tollPrice } } })
+        if not paid then I.say(caravan, "toll_broke", player, vars) return end
         I.txSerial = I.txSerial + 1
         local txId = "toll:" .. tostring(caravan.id) .. ":" .. tostring(I.txSerial)
-        caravan.pending = caravan.pending or {}
-        caravan.pending[txId] = { quote = { takeRows = {}, giveRows = { { type = T.currency, name = "cash", count = I.tollPrice, price = 1 } }, cost = 0, credit = I.tollPrice },
-            playerKey = key, expiresMs = A.now() + I.reservationMs, toll = true }
-        I.reply(player, "dealOk", { vehicleId = vehicleId, txId = txId, take = {}, give = { { type = T.currency, name = "cash", count = I.tollPrice, price = 1 } },
-            currency = T.currency, cost = 0, credit = I.tollPrice, toll = true })
-    elseif command == "tollDone" then
-        local txId = tostring(args.txId or "")
-        local entry = caravan.pending and caravan.pending[txId] or nil
-        if entry == nil or not entry.toll or entry.playerKey ~= key then return end
-        caravan.pending[txId] = nil
         caravan.toll = caravan.toll or {}
         caravan.toll[key] = nil
-        if args.ok == true then
-            caravan.truce = caravan.truce or {}
-            caravan.truce[key] = A.now() + 1800000
-            local talk = P() and P().Talk
-            local registry = P() and P().ActorRegistry
-            if talk ~= nil and registry ~= nil and type(talk.tolerate) == "function" then
-                for _, uid in ipairs(caravan.actorUids or {}) do
-                    local ok, actor = pcall(registry.read, uid)
-                    if ok and actor ~= nil then pcall(talk.tolerate, actor, key, A.now() + 1800000) end
-                end
+        caravan.truce = caravan.truce or {}
+        caravan.truce[key] = A.now() + 1800000
+        local talk = P() and P().Talk
+        local registry = P() and P().ActorRegistry
+        if talk ~= nil and registry ~= nil and type(talk.tolerate) == "function" then
+            for _, uid in ipairs(caravan.actorUids or {}) do
+                local ok, actor = pcall(registry.read, uid)
+                if ok and actor ~= nil then pcall(talk.tolerate, actor, key, A.now() + 1800000) end
             end
-            I.say(caravan, "toll_paid", player, vars)
-            A.Director.resume(caravan)
-        else
-            I.say(caravan, "toll_broke", player, vars)
         end
+        I.reply(player, "dealReceipt", { vehicleId = vehicleId, txId = txId, credit = I.tollPrice, toll = true })
+        I.say(caravan, "toll_paid", player, vars)
+        A.Director.resume(caravan)
+        A.Ledger.touch()
+    elseif command == "tollDone" then
+        return
 
     -- NEW INTERACTIONS
     elseif command == "join_caravan" then
@@ -454,39 +438,13 @@ function I.command(player, command, args)
     elseif command == "sos_status" then
         A.SOS.status(caravan, player)
     elseif command == "recruit_npc" then
-        if not A.settings.playerCanFormCaravan or caravan.state ~= "rendered" or not caravan.halted then return end
-        local stance = I.stanceFor(caravan, player)
-        if stance ~= "friendly" and stance ~= "neutral" then
-            I.say(caravan, "recruit_refuse", player, vars)
-            return
-        end
-        if #(caravan.actorUids or {}) <= 2 then
-            I.say(caravan, "recruit_refuse", player, vars) -- Can't spare anyone
-            return
-        end
-        -- Recruit the last NPC (not the leader)
-        local recruitUid = caravan.actorUids[#caravan.actorUids]
-        table.remove(caravan.actorUids)
-        -- Give the NPC to player's faction
-        local registry = P() and P().ActorRegistry
-        if registry then
-            pcall(function()
-                local ok, actor = pcall(registry.read, recruitUid)
-                if ok and actor then
-                    pcall(registry.updateTransient, recruitUid, actor.revision, function(record)
-                        record.memory.playerRecruit = { playerKey = key, sinceMs = A.now() }
-                    end)
-                end
-            end)
-        end
-        I.say(caravan, "recruit_ok", player, vars)
-        I.reply(player, "recruitOk", { vehicleId = vehicleId, uid = recruitUid })
-        A.metrics.playerCaravans = A.metrics.playerCaravans + 1
-        A.log(caravan.id, "NPC", recruitUid, "recruited by", key)
-        D.publishDirty = true
+        -- A-Life has no supported transfer-to-player-party API. Do not detach
+        -- a driver from its caravan while pretending recruitment succeeded.
+        I.say(caravan, "recruit_refuse", player, vars)
     elseif command == "inspect_cargo" then
         if not A.settings.caravanCargo or caravan.state ~= "rendered" then return end
-        if not caravan.halted and I.stanceFor(caravan, player) ~= "friendly" then
+        local stance = I.stanceFor(caravan, player)
+        if stance == "hostile" or (not caravan.halted and stance ~= "friendly") then
             I.say(caravan, "inspect_refuse", player, vars)
             return
         end
@@ -497,7 +455,7 @@ function I.command(player, command, args)
             if car then
                 local trunk = car:getPartById("TruckBed") or car:getPartById("Trunk")
                 if trunk then
-                    local container = trunk:getContainer()
+                    local container = trunk:getItemContainer()
                     if container then
                         for i = 0, container:getItems():size() - 1 do
                             local item = container:getItems():get(i)
@@ -510,38 +468,7 @@ function I.command(player, command, args)
         I.reply(player, "cargoView", { vehicleId = vehicleId, cargo = cargo, caravanId = caravan.id })
         I.say(caravan, "inspect_ok", player, vars)
     elseif command == "form_caravan" then
-        if not A.settings.playerCanFormCaravan then return end
-        -- Player wants to form their own caravan with recruited NPCs
-        local recruits = {}
-        local registry = P() and P().ActorRegistry
-        if registry then
-            for _, uid in ipairs(caravan.actorUids or {}) do
-                local ok, actor = pcall(registry.read, uid)
-                if ok and actor and actor.memory and actor.memory.playerRecruit and actor.memory.playerRecruit.playerKey == key then
-                    recruits[#recruits + 1] = uid
-                end
-            end
-        end
-        if #recruits < 2 then
-            I.say(caravan, "form_refuse_not_enough", player, vars)
-            return
-        end
-        -- Create player caravan (simplified - just mark the NPCs)
-        for _, uid in ipairs(recruits) do
-            pcall(function()
-                local ok, actor = pcall(registry.read, uid)
-                if ok and actor then
-                    pcall(registry.updateTransient, uid, actor.revision, function(record)
-                        record.memory.playerCaravanLeader = key
-                        record.memory.playerCaravanSince = A.now()
-                    end)
-                end
-            end)
-        end
-        I.say(caravan, "form_ok", player, vars)
-        I.reply(player, "formCaravanOk", { vehicleId = vehicleId, recruits = recruits, count = #recruits })
-        A.metrics.playerCaravans = A.metrics.playerCaravans + 1
-        A.log("PLAYER CARAVAN formed by", key, "with", #recruits, "NPCs")
+        I.say(caravan, "form_refuse_not_enough", player, vars)
     elseif command == "caravan_status" then
         local status = {
             caravanId = caravan.id,
@@ -569,32 +496,7 @@ function I.command(player, command, args)
         if caravan.state ~= "rendered" or not caravan.halted then return end
         local stance = I.stanceFor(caravan, player)
         if stance == "hostile" then return end
-        -- Player gives items from their inventory
-        local give = args.give or {}
-        if #give == 0 then return end
-        local quote = T.quote(caravan.stock or {}, caravan.kind, A.Ledger.favor(key, caravan.factionId), {}, give)
-        if not quote.ok then return end
-        -- Add to caravan stock
-        for _, row in ipairs(quote.giveRows) do
-            if row.type ~= T.currency then
-                local found = false
-                for _, stockRow in ipairs(caravan.stock) do
-                    if stockRow.item == row.type then
-                        stockRow.count = stockRow.count + row.count
-                        found = true
-                        break
-                    end
-                end
-                if not found and #caravan.stock < T.maxStock then
-                    caravan.stock[#caravan.stock + 1] = { item = row.type, name = T.name(row.type), value = T.valueOf(row.type), count = row.count }
-                end
-            end
-        end
-        A.Ledger.addFavor(key, caravan.factionId, 2)
-        I.say(caravan, "give_supplies", player, vars)
-        I.reply(player, "stock", I.stockView(caravan, player))
-        A.log(caravan.id, "received supplies from", key)
-        D.publishDirty = true
+        I.deal(caravan, player, vehicleId, { take = {}, give = args.give, revision = args.revision })
     end
 end
 

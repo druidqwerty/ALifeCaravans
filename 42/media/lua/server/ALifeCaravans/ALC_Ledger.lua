@@ -7,7 +7,7 @@ require "ALifeCaravans/00_ALC_Core"
 require "ALifeCaravans/05_ALC_Trade"
 
 local A = ALifeCaravans
-local Ledger = { store = nil, fallback = false }
+local Ledger = { store = nil, fallback = false, reloadPending = {} }
 A.Ledger = Ledger
 
 local DEFAULTS = { schema = A.SCHEMA, caravans = {}, sequence = 0, nextFoundAtMs = 0, favor = {}, sosReceipts = {} }
@@ -47,6 +47,7 @@ function Ledger.open()
     if Ledger.store ~= nil then return Ledger.store end
     local persistence = ProjectALife and ProjectALife.Persistence
     local store
+    Ledger.fallback = false
     if persistence ~= nil and type(persistence.bucket) == "function" then
         local ok, bucket = pcall(persistence.bucket, "alc_caravans", A.copy(DEFAULTS))
         if ok and type(bucket) == "table" then store = bucket else A.fail("ledger bucket", bucket) end
@@ -64,6 +65,20 @@ function Ledger.open()
     end
     store.caravans = type(store.caravans) == "table" and store.caravans or {}
     store.sequence = tonumber(store.sequence) or 0
+    store.favor = type(store.favor) == "table" and store.favor or {}
+    store.sosReceipts = type(store.sosReceipts) == "table" and store.sosReceipts or {}
+    Ledger.reloadPending = {}
+    for id, caravan in pairs(store.caravans) do
+        local serial = tonumber(string.match(tostring(id), "^caravan:(%d+)$")) or 0
+        store.sequence = math.max(store.sequence, serial)
+        if type(caravan) == "table" then
+            caravan.id = caravan.id or id
+            if caravan.state == "rendered" or caravan.state == "rendering" or caravan.state == "fighting"
+                    or caravan.state == "recovering" then
+                Ledger.reloadPending[id] = { state = caravan.state, actorUids = A.copy(caravan.actorUids or {}) }
+            end
+        end
+    end
     Ledger.store = store
     if Ledger.migrate(store) then Ledger.touch() end
     return store
@@ -80,8 +95,11 @@ end
 
 function Ledger.create(fields)
     local store = Ledger.open()
-    store.sequence = (tonumber(store.sequence) or 0) + 1
-    local id = "caravan:" .. tostring(store.sequence)
+    local id
+    repeat
+        store.sequence = (tonumber(store.sequence) or 0) + 1
+        id = "caravan:" .. tostring(store.sequence)
+    until store.caravans[id] == nil
     fields.id = id
     store.caravans[id] = fields
     Ledger.touch()
@@ -96,6 +114,7 @@ function Ledger.remove(id)
     local store = Ledger.open()
     if store.caravans[id] == nil then return false end
     store.caravans[id] = nil
+    Ledger.reloadPending[id] = nil
     Ledger.touch()
     return true
 end
@@ -151,9 +170,10 @@ end
 
 function Ledger.reset()
     local store = Ledger.open()
+    Ledger.reloadPending = {}
     store.sosReceipts = {}
     store.caravans = {}
-    store.sequence = 0
+    -- Never reuse persisted vehicle tags or SOS incident IDs after a debug reset.
     store.nextFoundAtMs = 0
     store.favor = {}
     store.schema = A.SCHEMA

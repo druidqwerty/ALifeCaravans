@@ -1,6 +1,6 @@
 -- A-Life: Caravans - client side. The right-click menu on a caravan car, the
--- barter window, the exchange itself (the player's inventory belongs to the
--- client; the server quotes, reserves and commits per transaction id), gifts,
+-- barter window, display-only exchange receipts (inventory belongs to the
+-- world owner and uses vanilla replication), gifts,
 -- server notices, headlight-flash hails, map markers and the per-player options
 -- (Options > Mods). Which cars are caravans comes from the world owner: directly
 -- in single player, by the "state" command in multiplayer.
@@ -10,6 +10,9 @@ require "ALifeCaravans/01_ALC_Lines"
 require "ALifeCaravans/04_ALC_Convoy"
 require "ALifeCaravans/05_ALC_Trade"
 require "ALifeCaravans/ALC_Map"
+require "ISUI/ISCollapsableWindow"
+require "ISUI/ISScrollingListBox"
+require "ISUI/ISButton"
 
 local A = ALifeCaravans
 local Cl = { options = { menu = true, notices = true }, requestedAtMs = 0, stock = {}, done = {}, flashes = {}, window = nil }
@@ -17,16 +20,17 @@ A.Client = Cl
 local L = A.Lines
 local T = A.Trade
 
-local function player0()
+local function player0(playerNum)
     if type(getSpecificPlayer) == "function" then
-        local ok, player = pcall(getSpecificPlayer, 0)
+        local ok, player = pcall(getSpecificPlayer, tonumber(playerNum) or 0)
         if ok and player ~= nil then return player end
     end
+    if (tonumber(playerNum) or 0) ~= 0 then return nil end
     return A.players()[1]
 end
 
-function Cl.send(command, args)
-    local player = player0()
+function Cl.send(command, args, playerNum)
+    local player = player0(playerNum)
     if player == nil then return end
     if type(isClient) == "function" and isClient() then
         pcall(sendClientCommand, player, A.MODULE, command, args)
@@ -36,9 +40,9 @@ function Cl.send(command, args)
     end
 end
 
-function Cl.notice(text)
+function Cl.notice(text, playerNum)
     if not Cl.options.notices or type(text) ~= "string" or text == "" then return end
-    local player = player0()
+    local player = player0(playerNum)
     if player == nil then return end
     pcall(function()
         if HaloTextHelper ~= nil and type(HaloTextHelper.addText) == "function" then
@@ -50,94 +54,42 @@ function Cl.notice(text)
     end)
 end
 
-local function countOf(inventory, fullType)
-    local ok, count = pcall(function() return inventory:getCountTypeRecurse(fullType) end)
-    if ok and type(count) == "number" then return count end
-    return 0
-end
-
-local function removeSome(inventory, fullType, count)
-    for _ = 1, count do
-        local ok = pcall(function()
-            local item = inventory:getFirstTypeRecurse(fullType)
-            if item == nil then error("missing") end
-            local container = item:getContainer() or inventory
-            container:Remove(item)
-        end)
-        if not ok then return false end
-    end
-    return true
-end
-
-local function addSome(inventory, fullType, count)
-    local added = 0
-    for _ = 1, count do
-        local ok = pcall(function() inventory:AddItem(fullType) end)
-        if ok then added = added + 1 end
-    end
-    return added
-end
-
--- Execute a reserved deal exactly once: check every offered item, remove the
--- offered items, add the bought ones, acknowledge with the transaction id.
+-- Compatibility name, now a receipt only. Replayed or old dealOk packets
+-- cannot mint inventory items or pay a transaction twice.
 function Cl.performDeal(args)
-    local player = player0()
-    if player == nil or type(args) ~= "table" then return end
+    if type(args) ~= "table" then return end
     local txId = tostring(args.txId or "")
-    if Cl.done[txId] then return end
+    if txId == "" or Cl.done[txId] then return end
     Cl.done[txId] = true
-    local inventory = player:getInventory()
-    local ok = true
-    for _, row in ipairs(args.give or {}) do
-        if countOf(inventory, row.type) < (tonumber(row.count) or 0) then ok = false end
-    end
-    if ok then
-        for _, row in ipairs(args.give or {}) do
-            if not removeSome(inventory, row.type, tonumber(row.count) or 0) then ok = false end
-        end
-    end
-    if ok then
-        for _, row in ipairs(args.take or {}) do addSome(inventory, row.item, tonumber(row.count) or 0) end
-    end
-    local reply = args.toll == true and "tollDone" or "dealDone"
-    Cl.send(reply, { vehicleId = args.vehicleId, txId = txId, ok = ok })
-    if ok then
-        if args.toll == true then
-            Cl.notice(L.ui("toll_paid", "Toll paid: {price}", { price = args.credit }))
-        else
-            local bought = {}
-            for _, row in ipairs(args.take or {}) do bought[#bought + 1] = tostring(row.count) .. "x " .. tostring(row.name or row.item) end
-            local paid = {}
-            for _, row in ipairs(args.give or {}) do paid[#paid + 1] = tostring(row.count) .. "x " .. tostring(row.name or row.type) end
-            Cl.notice(L.ui("dealt", "Traded {paid} for {bought}", { paid = table.concat(paid, ", "), bought = #bought > 0 and table.concat(bought, ", ") or "-" }))
-        end
+    if args.toll == true then
+        Cl.notice(L.ui("toll_paid", "Toll paid: {price}", { price = args.credit }), args.playerNum)
     else
-        Cl.notice(L.ui("broke", "Not enough to pay ({price} needed)", { price = args.cost or 0 }))
+        local bought, paid = {}, {}
+        for _, row in ipairs(args.take or {}) do bought[#bought + 1] = tostring(row.count) .. "x " .. tostring(row.name or row.item) end
+        for _, row in ipairs(args.give or {}) do paid[#paid + 1] = tostring(row.count) .. "x " .. tostring(row.name or row.type) end
+        Cl.notice(L.ui("dealt", "Traded {paid} for {bought}", { paid = table.concat(paid, ", "),
+            bought = #bought > 0 and table.concat(bought, ", ") or "-" }), args.playerNum)
     end
     if Cl.window ~= nil then Cl.window:refresh() end
 end
 
 function Cl.receiveGift(args)
-    local player = player0()
-    if player == nil or type(args) ~= "table" or type(args.item) ~= "string" then return end
-    local added = addSome(player:getInventory(), args.item, tonumber(args.count) or 1)
-    if added > 0 then Cl.notice(L.ui("received", "Received {item}", { item = tostring(added) .. "x " .. tostring(args.name or args.item) })) end
+    if type(args) ~= "table" or args.delivered ~= true or type(args.item) ~= "string" then return end
+    Cl.notice(L.ui("received", "Received {item}", { item = tostring(args.count or 1) .. "x " .. tostring(args.name or args.item) }), args.playerNum)
 end
 
 -- ------------------------------------------------------------- trade window
 local function tradableInventory(player)
     local rows, seen = {}, {}
-    pcall(function()
-        local items = player:getInventory():getItems()
-        for index = 0, items:size() - 1 do
-            local item = items:get(index)
-            local fullType = item:getFullType()
-            if not seen[fullType] and item:getContainer() == player:getInventory() then
-                seen[fullType] = true
-                rows[#rows + 1] = { type = fullType, name = item:getDisplayName(), count = countOf(player:getInventory(), fullType) }
-            end
+    for _, candidate in ipairs(T.inventoryItems(player)) do
+        local fullType = candidate.type
+        if seen[fullType] == nil then
+            local row = { type = fullType, name = T.name(fullType), count = 0 }
+            seen[fullType] = row
+            rows[#rows + 1] = row
         end
-    end)
+        seen[fullType].count = seen[fullType].count + 1
+    end
     table.sort(rows, function(a, b) return a.name < b.name end)
     return rows
 end
@@ -180,12 +132,16 @@ if ALCTradeWindow ~= nil then
         self.closeButton = ISButton:new(self.width - 120, self.height - 34, 110, 24, L.ui("close_button", "Close"), self, ALCTradeWindow.onClose)
         self.closeButton:initialise()
         self:addChild(self.closeButton)
+        self.joyList = self.sellList
         self:refresh()
     end
 
     function ALCTradeWindow:drawRow(list, y, item, alt)
         local row = item.item
         local selected = tonumber(row.selected) or 0
+        if self.joyfocus and self.joyList == list and item.index == list.selected then
+            list:drawRectBorder(0, y, list:getWidth(), list.itemheight - 1, 1, 0.8, 0.8, 1)
+        end
         if selected > 0 then list:drawRect(0, y, list:getWidth(), list.itemheight - 1, 0.35, 0.3, 0.6, 0.3) end
         list:drawRectBorder(0, y, list:getWidth(), list.itemheight - 1, 0.25, 1, 1, 1)
         local text = tostring(row.name) .. "  x" .. tostring(row.count) .. "  (" .. tostring(row.price) .. ")"
@@ -196,13 +152,18 @@ if ALCTradeWindow ~= nil then
 
     function ALCTradeWindow:clickRow(list, x, y, side)
         local index = list:rowAt(x, y)
-        if index < 1 or index > #list.items then return true end
+        if type(index) ~= "number" or index < 1 or index > #list.items then return true end
+        self:selectRow(list, index)
+        return true
+    end
+
+    function ALCTradeWindow:selectRow(list, index)
+        if list.items[index] == nil then return end
         local row = list.items[index].item
         local selected = (tonumber(row.selected) or 0) + 1
         if selected > row.count then selected = 0 end
         row.selected = selected
         self:updateSummary()
-        return true
     end
 
     function ALCTradeWindow:selection()
@@ -231,12 +192,12 @@ if ALCTradeWindow ~= nil then
         self.sellList:clear()
         self.giveList:clear()
         if view == nil then return end
-        self.kind, self.favor = view.kind, view.favor
+        self.kind, self.favor, self.revision = view.kind, view.favor, view.revision
         for _, row in ipairs(view.rows or {}) do
             self.sellList:addItem(row.name, { index = row.index, item = row.item, name = row.name, count = row.count, price = row.price,
                 value = row.price / (T.rateFor(view.kind).sell * T.favorFactor(view.favor)), selected = 0 })
         end
-        local player = player0()
+        local player = player0(self.playerNum)
         for _, row in ipairs(tradableInventory(player)) do
             local price = T.buyPrice(row.type, view.kind)
             if price > 0 then
@@ -260,9 +221,10 @@ if ALCTradeWindow ~= nil then
     end
 
     function ALCTradeWindow:onTrade()
+        if self.quote == nil or not self.quote.ok then return end
         local take, give = self:selection()
         if A.isEmpty(take) and #give == 0 then return end
-        Cl.send("deal", { vehicleId = self.vehicleId, take = take, give = give })
+        Cl.send("deal", { vehicleId = self.vehicleId, take = take, give = give, revision = self.revision }, self.playerNum)
     end
 
     function ALCTradeWindow:onClear()
@@ -273,10 +235,34 @@ if ALCTradeWindow ~= nil then
         self:setVisible(false)
         self:removeFromUIManager()
         if Cl.window == self then Cl.window = nil end
+        if self.joyfocus and type(setJoypadFocus) == "function" then setJoypadFocus(self.playerNum or 0, nil) end
+    end
+
+    function ALCTradeWindow:close() self:onClose() end
+
+    function ALCTradeWindow:onGainJoypadFocus(joypadData)
+        self.joyfocus = joypadData
+        self.joyList = self.joyList or self.sellList
+        self.joyList.selected = math.max(1, self.joyList.selected or 1)
+        self.tradeButton:setJoypadButton(Joypad.Texture.XButton)
+        self.clearButton:setJoypadButton(Joypad.Texture.YButton)
+        self.closeButton:setJoypadButton(Joypad.Texture.BButton)
+    end
+
+    function ALCTradeWindow:onLoseJoypadFocus() self.joyfocus = nil end
+    function ALCTradeWindow:onJoypadDirLeft() self.joyList = self.sellList end
+    function ALCTradeWindow:onJoypadDirRight() self.joyList = self.giveList end
+    function ALCTradeWindow:onJoypadDirUp() self.joyList:onJoypadDirUp() end
+    function ALCTradeWindow:onJoypadDirDown() self.joyList:onJoypadDirDown() end
+    function ALCTradeWindow:onJoypadDown(button)
+        if button == Joypad.AButton then self:selectRow(self.joyList, self.joyList.selected or 1)
+        elseif button == Joypad.XButton then self:onTrade()
+        elseif button == Joypad.YButton then self:onClear()
+        elseif button == Joypad.BButton then self:onClose() end
     end
 end
 
-function Cl.openTrade(vehicleId)
+function Cl.openTrade(vehicleId, playerNum)
     if ALCTradeWindow == nil then return false end
     if Cl.window ~= nil then Cl.window:onClose() end
     local ok, err = pcall(function()
@@ -285,12 +271,17 @@ function Cl.openTrade(vehicleId)
         local y = math.floor((getCore():getScreenHeight() - height) / 2)
         local window = ALCTradeWindow:new(x, y, width, height)
         window.vehicleId = vehicleId
+        window.playerNum = tonumber(playerNum) or 0
         local view = Cl.stock[vehicleId]
         window:setTitle(L.ui("trade_title", "Caravan trade: {leader} ({callsign})", { leader = view and view.leader or "?", callsign = view and view.callsign or "" }))
         window:initialise()
         window:addToUIManager()
         window:setVisible(true)
         Cl.window = window
+        window:setResizable(false)
+        if JoypadState and JoypadState.players and JoypadState.players[window.playerNum + 1] and type(setJoypadFocus) == "function" then
+            setJoypadFocus(window.playerNum, window)
+        end
     end)
     if not ok then A.fail("trade window", err) return false end
     return true
@@ -308,9 +299,11 @@ function Cl.receive(module, command, args)
     elseif command == "stock" then
         if type(args) == "table" and args.vehicleId ~= nil then
             Cl.stock[args.vehicleId] = args
-            if Cl.window ~= nil and Cl.window.vehicleId == args.vehicleId then Cl.window:refresh() else Cl.openTrade(args.vehicleId) end
+            if Cl.window ~= nil and Cl.window.vehicleId == args.vehicleId and Cl.window.playerNum == (args.playerNum or 0) then
+                Cl.window:refresh()
+            else Cl.openTrade(args.vehicleId, args.playerNum) end
         end
-    elseif command == "dealOk" then
+    elseif command == "dealReceipt" then
         Cl.performDeal(args)
     elseif command == "dealRefused" then
         Cl.notice(L.ui("refused", "No deal ({reason})", { reason = type(args) == "table" and args.reason or "?" }))
@@ -338,18 +331,28 @@ local function option(context, label, callback, ...)
 end
 
 function Cl.fill(playerNum, context, worldobjects, test)
-    if test == true or not Cl.options.menu or type(context) ~= "table" or type(context.addOption) ~= "function" then return end
-    local player = getSpecificPlayer(playerNum)
+    if not Cl.options.menu then return end
+    local player = player0(playerNum)
     if player == nil or player:isDead() then return end
     local rows = A.Convoy.near(player, 18)
     if #rows == 0 then return end
+    if test == true then
+        if ISWorldObjectContextMenu and type(ISWorldObjectContextMenu.setTest) == "function" then
+            return ISWorldObjectContextMenu.setTest()
+        end
+        return
+    end
+    if type(context) ~= "table" or type(context.addOption) ~= "function" or type(context.getNew) ~= "function"
+        or type(context.addSubMenu) ~= "function" then return end
     local row = rows[1]
     local entry, id = row.entry, row.id
     local kind = L.ui("kind_" .. tostring(entry.kind), tostring(entry.kind))
-    local root = context:addOption(L.ui("menu", "[A-LIFE] Caravan: {name} ({kind})", { name = entry.callsign and (entry.name .. " " .. entry.callsign) or entry.name, kind = kind }))
+    local name = tostring(entry.name or "?")
+    if entry.callsign then name = name .. " " .. tostring(entry.callsign) end
+    local root = context:addOption(L.ui("menu", "[A-LIFE] Caravan: {name} ({kind})", { name = name, kind = kind }))
     local submenu = context:getNew(context)
     context:addSubMenu(root, submenu)
-    local function send(command) return function() Cl.send(command, { vehicleId = id }) end end
+    local function send(command) return function() Cl.send(command, { vehicleId = id }, playerNum) end end
     if A.settings.sosContracts and entry.sosState ~= nil then
         if entry.sosState == "open" and not entry.hostile then
             option(submenu, L.ui("sos_accept", "SOS: cover the convoy's escape"), send("distress_help"))
@@ -382,7 +385,7 @@ function Cl.flashTick(now)
     if player == nil or not A.settings.hornHails then return end
     local vehicle
     pcall(function() vehicle = player:getVehicle() end)
-    if vehicle == nil then Cl.flashState = nil return end
+    if vehicle == nil then Cl.flashState = nil Cl.flashes = {} return end
     local on
     pcall(function() on = vehicle:getHeadlightsOn() end)
     if on == nil then return end

@@ -3,7 +3,7 @@ require "ALifeCaravans/ALC_SOS"
 local A, S = ALifeCaravans, ALifeCaravans.SOS
 
 function S.onRelease(caravan, reason)
-    if not S.active(caravan) then return end
+    if not A.authority() or not S.active(caravan) then return end
     caravan.sos.sample = nil
     if reason == "far" or reason == "cars_gone" then
         caravan.sos.missingSinceMs = caravan.sos.missingSinceMs or A.now()
@@ -18,7 +18,7 @@ local function movingCar(caravan, player)
     if px == nil then return nil end
     for _, id in ipairs(caravan.vehicleIds or {}) do
         local car = getVehicleById(id)
-        if car ~= nil then
+        if car ~= nil and A.vehicleTag(car) == caravan.id then
             local x, y = A.xyz(car)
             local driver = car:getDriver()
             local fuel, engine = A.Spawn.carHealth(car)
@@ -48,7 +48,7 @@ function S.tick(caravan, now, players)
         local anyCar = false
         for _, id in ipairs(caravan.vehicleIds or {}) do
             local body = getVehicleById(id)
-            if body ~= nil then
+            if body ~= nil and A.vehicleTag(body) == caravan.id then
                 anyCar = true
                 local px, py = A.xyz(player)
                 local cx, cy = A.xyz(body)

@@ -17,15 +17,21 @@ M.colors = {
     rescue = { 0.96, 0.40, 0.40 }, raid = { 0.82, 0.22, 0.22 }, unknown = { 0.8, 0.8, 0.8 },
 }
 
+local function finite(value)
+    value = tonumber(value)
+    return value ~= nil and value == value and value > -math.huge and value < math.huge and value or nil
+end
+
 -- New marker list from the server: keep the previous position for interpolation.
 function M.setMarkers(list)
     local now = A.now()
     local fresh, order = {}, {}
-    for _, marker in ipairs(list or {}) do
+    for _, marker in ipairs(type(list) == "table" and list or {}) do
+      if type(marker) == "table" and type(marker.id) == "string" and finite(marker.x) and finite(marker.y) then
         local previous = M.markers[marker.id]
         local entry = {
             id = marker.id, name = marker.name, callsign = marker.callsign, kind = marker.kind, state = marker.state,
-            halted = marker.halted, dest = marker.dest, cars = marker.cars, heading = tonumber(marker.heading) or 0,
+            halted = marker.halted, dest = marker.dest, cars = marker.cars, heading = finite(marker.heading) or 0,
             sos = marker.sos == true,
             x1 = tonumber(marker.x) or 0, y1 = tonumber(marker.y) or 0, t1 = now,
         }
@@ -35,8 +41,9 @@ function M.setMarkers(list)
         else
             entry.x0, entry.y0, entry.t0 = entry.x1, entry.y1, now
         end
+        if fresh[marker.id] == nil then order[#order + 1] = marker.id end
         fresh[marker.id] = entry
-        order[#order + 1] = marker.id
+      end
     end
     table.sort(order)
     M.markers, M.order = fresh, order
@@ -60,31 +67,28 @@ end
 -- Pixel silhouette of a car seen from above. Keeping this as rectangles avoids
 -- a texture dependency and makes the marker crisp at every map zoom. The glass
 -- is cut out in dark colour so the result reads as a car rather than a square.
+local smallCar = {
+    outer = { { -2, -3, 4, 6 }, { -1, -4, 2, 1 }, { -1, 3, 2, 1 },
+        { -3, -2, 1, 2 }, { 2, -2, 1, 2 }, { -3, 1, 1, 2 }, { 2, 1, 1, 2 } },
+    body = { { -1, -2, 2, 4 } }, glass = { { -1, -1, 2, 1 }, { -1, 1, 2, 1 } },
+}
+local largeCar = {
+    outer = { { -3, -5, 6, 10 }, { -2, -6, 4, 1 }, { -2, 5, 4, 1 },
+        { -4, -3, 1, 3 }, { 3, -3, 1, 3 }, { -4, 2, 1, 3 }, { 3, 2, 1, 3 } },
+    body = { { -2, -4, 4, 8 }, { -1, -5, 2, 1 }, { -1, 4, 2, 1 } },
+    glass = { { -2, -2, 4, 2 }, { -2, 2, 4, 1 } },
+}
+
 function M.drawCar(element, cx, cy, color, size, live, halted)
     local small = (size or 5) <= 3
-    local outer, body, glass
-    if small then
-        outer = {
-            { -2, -3, 4, 6 }, { -1, -4, 2, 1 }, { -1, 3, 2, 1 },
-            { -3, -2, 1, 2 }, { 2, -2, 1, 2 }, { -3, 1, 1, 2 }, { 2, 1, 1, 2 },
-        }
-        body = { { -1, -2, 2, 4 } }
-        glass = { { -1, -1, 2, 1 }, { -1, 1, 2, 1 } }
-    else
-        outer = {
-            { -3, -5, 6, 10 }, { -2, -6, 4, 1 }, { -2, 5, 4, 1 },
-            { -4, -3, 1, 3 }, { 3, -3, 1, 3 }, { -4, 2, 1, 3 }, { 3, 2, 1, 3 },
-        }
-        body = { { -2, -4, 4, 8 }, { -1, -5, 2, 1 }, { -1, 4, 2, 1 } }
-        glass = { { -2, -2, 4, 2 }, { -2, 2, 4, 1 } }
-    end
-    for _, rect in ipairs(outer) do
+    local shape = small and smallCar or largeCar
+    for _, rect in ipairs(shape.outer) do
         element:drawRect(cx + rect[1], cy + rect[2], rect[3], rect[4], 0.96, 0.04, 0.04, 0.04)
     end
-    for _, rect in ipairs(body) do
+    for _, rect in ipairs(shape.body) do
         element:drawRect(cx + rect[1], cy + rect[2], rect[3], rect[4], 0.98, color[1], color[2], color[3])
     end
-    for _, rect in ipairs(glass) do
+    for _, rect in ipairs(shape.glass) do
         element:drawRect(cx + rect[1], cy + rect[2], rect[3], rect[4], 0.95, 0.08, 0.10, 0.12)
     end
     if live then
@@ -101,7 +105,7 @@ end
 
 -- Draw every marker on a map element with the given map API (world -> UI).
 function M.drawOn(element, api, labels, size)
-    if element == nil or api == nil or type(api.worldToUIX) ~= "function" then return 0 end
+    if element == nil or api == nil or type(api.worldToUIX) ~= "function" or type(api.worldToUIY) ~= "function" then return 0 end
     local now = A.now()
     local half = size or 5
     local drawn = 0

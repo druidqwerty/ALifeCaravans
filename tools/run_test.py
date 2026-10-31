@@ -66,6 +66,11 @@ def main():
                 failed += 1
         translations.update(en)
     lua = lupa.LuaRuntime(unpack_returned_tuples=True)
+    with open(sandbox_path, encoding="utf-8") as handle:
+        for key in re.findall(r"translation\s*=\s*([\w_]+)", handle.read()):
+            if "Sandbox_" + key not in translations:
+                print("FAIL missing Sandbox translation", key)
+                failed += 1
     lua.globals().MOD_ROOT = MOD_ROOT
     table = lua.table()
     for key, value in translations.items():

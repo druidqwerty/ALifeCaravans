@@ -51,5 +51,16 @@
     "Sandbox_ALifeCaravans_Markers": "Caravans on players' maps",
     "Sandbox_ALifeCaravans_Markers_tooltip": "Allow the world map and minimap markers (each player can turn them off in Options > Mods).",
     "Sandbox_ALifeCaravans_Debug": "Debug log",
-    "Sandbox_ALifeCaravans_Debug_tooltip": "Extra [ALC] lines in console.txt (founding, rendering, routes)."
+    "Sandbox_ALifeCaravans_Debug_tooltip": "Extra [ALC] lines in console.txt (founding, rendering, routes).",
+    "Sandbox_ALifeCaravans_EventCaravans": "Special cargo caravans",
+    "Sandbox_ALifeCaravans_ScavengingEnabled": "Restock goods while travelling",
+    "Sandbox_ALifeCaravans_BreakdownChance": "Roadside inspection chance (percent)",
+    "Sandbox_ALifeCaravans_RefuelEnabled": "Refuel near gas stations",
+    "Sandbox_ALifeCaravans_MergeCaravans": "Merge nearby same-faction convoys",
+    "Sandbox_ALifeCaravans_CaravanCargo": "Caravan cargo interactions",
+    "Sandbox_ALifeCaravans_WeatherEffects": "Weather and night affect cruising speed",
+    "Sandbox_ALifeCaravans_NightTravelPenalty": "Night speed, percent",
+    "Sandbox_ALifeCaravans_DistressCalls": "Radio distress calls",
+    "Sandbox_ALifeCaravans_LivingWorld": "Horde and friendly-base stops",
+    "Sandbox_ALifeCaravans_BreakdownChance_tooltip": "Chance at each two-minute check for a 45-second roadside inspection. Never destroys the engine. Set 0 to disable."
 }

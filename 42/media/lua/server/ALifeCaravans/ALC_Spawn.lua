@@ -18,6 +18,7 @@ require "ALifeCaravans/00_ALC_Core"
 require "ALifeCaravans/02_ALC_Vehicles"
 require "ALifeCaravans/03_ALC_Roads"
 require "ALifeCaravans/04_ALC_Convoy"
+require "ALifeCaravans/ALC_Arrival"
 
 local A = ALifeCaravans
 local S = { pending = nil, installed = false, serial = 0, lastReason = nil, recrewSerial = 0 }
@@ -62,8 +63,14 @@ function S.install()
             pending.carIndex = (pending.carIndex or 0) + 1
             local script = pending.scripts[pending.carIndex] or pending.scripts[#pending.scripts]
             if script ~= nil then V.script = script end
-            local car, seats = original(site, requestId)
+            local called, car, seats
+            if type(addVehicleDebug)=="function" then
+                called, car, seats=pcall(A.Arrival.create,V.script,site,requestId)
+            else
+                called, car, seats=pcall(original,site,requestId)
+            end
             V.script = previous
+            if not called then error(car) end
             if car ~= nil then
                 -- A-Life fills a car before it creates the next one; handing back
                 -- fewer usable seats spreads the crew over the convoy's cars.
@@ -296,11 +303,11 @@ function S.render(caravan, player, players, unit)
     local pending = S.pending
     S.pending = nil
     if not okCall then
-        S.teardownVehicles(pending.cars)
+        S.teardownVehicles(pending.cars, caravan.id)
         return false, "spawn_error:" .. tostring(result)
     end
     if type(result) ~= "table" or result.ok ~= true then
-        S.teardownVehicles(pending.cars)
+        S.teardownVehicles(pending.cars, caravan.id)
         local why = type(result) == "table" and result.reason or tostring(result)
         return false, tostring(why or "spawn_refused") .. (S.lastReason and (" (" .. tostring(S.lastReason) .. ")") or "")
     end
@@ -334,10 +341,23 @@ function S.sessionOf(vehicleId)
 end
 
 -- Release one car from A-Life's driving bookkeeping (mirrors VehicleArrivals.cancel).
-function S.releaseCar(vehicleId)
+function S.releaseCar(vehicleId, caravanId)
     local p = P()
     local owner, s, record = S.sessionOf(vehicleId)
-    if owner == nil then return end
+    local car = type(getVehicleById)=="function" and getVehicleById(vehicleId) or nil
+    if type(caravanId) ~= "string" then return false end
+    -- IDs are transient. Prove ownership before releasing another mod's crew,
+    -- native adapter or binding, including an unloaded car's saved session body.
+    local proof = car or (s and s.vehicle)
+    if proof == nil or A.vehicleTag(proof) ~= caravanId then return false end
+    if s and s.vehicle and A.vehicleTag(s.vehicle) ~= caravanId then return false end
+    if record then
+        for _, previous in pairs({record.session, record.restored}) do
+            if previous and previous.vehicle and A.vehicleTag(previous.vehicle) ~= caravanId then return false end
+        end
+    end
+    if car and A.Physics.releaseSP then A.Physics.releaseSP(car) end
+    if owner == nil then return true end
     local D, L = p.DrivingDemo, p.DrivingLifecycle
     pcall(function()
         if s ~= nil and D ~= nil then D.release(s) end
@@ -357,16 +377,18 @@ function S.releaseCar(vehicleId)
     if owner.active == s then owner.active = nil end
     p.VehicleArrivals.active[vehicleId] = nil
     p.VehicleArrivals.journeys[vehicleId] = nil
+    return true
 end
 
-function S.teardownVehicles(ids)
+function S.teardownVehicles(ids, caravanId)
     local p = P()
     for _, id in ipairs(ids or {}) do
-        S.releaseCar(id)
         local car = type(getVehicleById) == "function" and getVehicleById(id) or nil
-        if car ~= nil and p ~= nil and p.VehicleArrivalVehicle ~= nil and not A.vehicleHasPlayer(car) then
-            local ok, removed = pcall(p.VehicleArrivalVehicle.remove, car)
-            if not ok then A.fail("vehicle remove", removed) end
+        if car ~= nil and A.vehicleTag(car) == caravanId and p ~= nil and p.VehicleArrivalVehicle ~= nil and not A.vehicleHasPlayer(car) then
+            if S.releaseCar(id, caravanId) then
+                local ok, removed = pcall(p.VehicleArrivalVehicle.remove, car)
+                if not ok then A.fail("vehicle remove", removed) end
+            end
         end
     end
 end
@@ -390,13 +412,18 @@ end
 -- a player inside stays in the world (returned in `kept`); abandoned cars stay.
 function S.teardown(caravan, reason)
     local kept = {}
+    -- A passenger's convoy is still real gameplay, not disposable scenery.
+    for _, id in ipairs(caravan.vehicleIds or {}) do
+        local car = getVehicleById(id)
+        if car and A.vehicleTag(car) == caravan.id and A.vehicleHasPlayer(car) then return {id}, "player_aboard" end
+    end
     S.teardownActors(caravan.actorUids, reason or "alc_release")
     local p = P()
     for _, id in ipairs(caravan.vehicleIds or {}) do
-        S.releaseCar(id)
+        local released = S.releaseCar(id, caravan.id)
         local car = type(getVehicleById) == "function" and getVehicleById(id) or nil
-        if car ~= nil and p ~= nil and p.VehicleArrivalVehicle ~= nil then
-            if A.vehicleHasPlayer(car) then
+        if car ~= nil and A.vehicleTag(car) == caravan.id and p ~= nil and p.VehicleArrivalVehicle ~= nil then
+            if not released or A.vehicleHasPlayer(car) then
                 kept[#kept + 1] = id
             else
                 local ok, removed = pcall(p.VehicleArrivalVehicle.remove, car)
@@ -404,7 +431,7 @@ function S.teardown(caravan, reason)
             end
         end
     end
-    for _, id in ipairs(caravan.abandoned or {}) do S.releaseCar(id) end
+    for _, id in ipairs(caravan.abandoned or {}) do S.releaseCar(id, caravan.id) end
     caravan.actorUids = {}
     caravan.vehicleIds = {}
     caravan.abandoned = {}
@@ -480,6 +507,51 @@ function S.survivors(caravan, x, y, radius)
     return out
 end
 
+-- DrivingCrewHome restores a binding and mixed-seat permission, but no session.
+-- Only that parked, owned case may reconnect NPCs around an existing passenger.
+function S.canRestoreRiders(caravan, vehicleId)
+    local car = type(getVehicleById) == "function" and getVehicleById(vehicleId) or nil
+    if not car or type(caravan.id) ~= "string" or A.vehicleTag(car) ~= caravan.id then return false end
+    local owner, session, sleeping = S.sessionOf(vehicleId)
+    local binding = owner and owner.bindings and owner.bindings[vehicleId]
+    if session or sleeping or not binding or binding.restoredCrew ~= true then return false end
+    if not (owner.allowRiders and owner.allowRiders[vehicleId] == true
+            and owner.carModes and owner.carModes[vehicleId] == "mixed") then return false end
+    if (owner.departures and owner.departures[vehicleId]) or (owner.pending and owner.pending[vehicleId]) then return false end
+    local safe, parked = pcall(function()
+        local speed = car:getCurrentSpeedKmHour()
+        return type(speed) == "number" and speed == speed and math.abs(speed) <= 0.18
+            and getCell():getGridSquare(math.floor(car:getX()), math.floor(car:getY()), math.floor(car:getZ())) ~= nil
+            and not instanceof(car:getCharacter(0), "IsoPlayer")
+    end)
+    if not safe or not parked then return false end
+    local owned, bound, available, bodies = {}, {}, false, {}
+    for _, uid in ipairs(caravan.actorUids or {}) do owned[uid] = true end
+    for _, spec in ipairs(binding.crew or {}) do
+        if not owned[spec.uid] then return false end
+        bound[spec.uid] = true
+    end
+    local x, y = A.xyz(car)
+    for _, member in ipairs(S.survivors(caravan, x, y, 100)) do
+        if member.inCar == nil or member.inCar == car then
+            bodies[member.npc] = true
+            if bound[member.uid] then available = true end
+        end
+    end
+    if not available then return false end
+    local passenger = false
+    safe = pcall(function()
+        for seat = 0, car:getMaxPassengers() - 1 do
+            local occupant = car:getCharacter(seat)
+            if occupant then
+                if instanceof(occupant, "IsoPlayer") then passenger = seat > 0 or passenger
+                elseif not bodies[occupant] then error("unowned occupant") end
+            end
+        end
+    end)
+    return safe and passenger
+end
+
 -- Put a crew back into a car: the survivors walk to the car, board it (a new
 -- driver on seat 0) and drive the caravan's route on. `limit` caps additional
 -- on-foot survivors; already seated crew do not consume this shared quota.
@@ -488,9 +560,12 @@ function S.recrew(caravan, vehicleId, route, limit, reserved)
     local p = P()
     local car = type(getVehicleById) == "function" and getVehicleById(vehicleId) or nil
     if car == nil or p == nil or p.DrivingLifecycle == nil or p.DrivingTuning == nil then return false, "no_car" end
+    if A.vehicleTag(car) ~= caravan.id or type(caravan.id) ~= "string" then return false, "foreign_car" end
+    local restoredRiders = A.vehicleHasPlayer(car)
+    if restoredRiders and not S.canRestoreRiders(caravan, vehicleId) then return false, "player_aboard" end
     local cx, cy = A.xyz(car)
     if cx == nil then return false, "no_position" end
-    local candidates = S.survivors(caravan, cx, cy, 40)
+    local candidates = S.survivors(caravan, cx, cy, 100)
     -- crew already seated in another caravan car stays there
     local free = {}
     for _, row in ipairs(candidates) do
@@ -507,7 +582,7 @@ function S.recrew(caravan, vehicleId, route, limit, reserved)
                 else
                     for _, row in ipairs(free) do
                         if row.inCar == car and row.npc == occupant then
-                            crew[#crew + 1] = { uid = row.uid, generation = row.generation, seat = seat }
+                            crew[#crew + 1] = { uid = row.uid, generation = row.generation, seat = seat, boarded = true }
                             assigned[row.uid] = true
                             break
                         end
@@ -530,7 +605,6 @@ function S.recrew(caravan, vehicleId, route, limit, reserved)
     end
     table.sort(crew, function(a, b) return a.seat < b.seat end)
     if crew[1] == nil or crew[1].seat ~= 0 then return false, "no_driver_seat" end
-    S.releaseCar(vehicleId)
     local owner = p.VehicleArrivals.owner()
     if owner == nil then return false, "no_owner" end
     local player = A.players()[1]
@@ -548,12 +622,59 @@ function S.recrew(caravan, vehicleId, route, limit, reserved)
     end
     if player == nil then return false, "no_player" end
     local points = {}
-    for _, point in ipairs(route or caravan.legPoints or {}) do points[#points + 1] = { x = point.x, y = point.y } end
-    if #points == 0 then
-        local goal = caravan.goals and caravan.goals[caravan.goalIndex or 1] or nil
-        if goal ~= nil then points[1] = { x = goal.x, y = goal.y } end
+    if route then
+        for _, point in ipairs(route) do points[#points+1]={x=point.x,y=point.y} end
+    else
+        -- Re-scout from the parked car, not the original spawn's old route.
+        local entry = A.Convoy.entry(vehicleId) or {goals=caravan.goals,goalIndex=caravan.goalIndex or 1}
+        local leg, reason = A.Convoy.legFor(entry,{vehicle=car,route={}},true)
+        if leg then points=leg end
+        if reason == "arrived" and #(entry.goals or {}) > 0 and A.Director then
+            A.Director.onConvoyReport(nil,"arrived",{vehicleId=vehicleId})
+            return false,"at_destination"
+        end
+        -- Legacy/testing caravans without goals may supply an explicit leg.
+        if #points==0 and #(caravan.goals or {})==0 then
+            for _, point in ipairs(caravan.legPoints or {}) do points[#points+1]={x=point.x,y=point.y} end
+        end
     end
     if #points == 0 then return false, "no_route" end
+    -- Arrival grants a key only to its original driver. A surviving passenger
+    -- promoted after combat needs the same persistent, idempotent A-Life grant.
+    -- Revalidate the selected real body/registry generation before any release.
+    local driverSpec, owned, driverBody = crew[1], false, nil
+    for _, uid in ipairs(caravan.actorUids or {}) do if uid == driverSpec.uid then owned = true break end end
+    for _, row in ipairs(free) do
+        if row.uid == driverSpec.uid and row.generation == driverSpec.generation then driverBody = row.npc break end
+    end
+    local valid, driverActor, npc = pcall(function()
+        local actor = p.ActorRegistry and p.ActorRegistry.read(driverSpec.uid)
+        if not owned or not actor or actor.uid ~= driverSpec.uid or actor.lifecycle ~= "active"
+                or actor.generation ~= driverSpec.generation then return end
+        local body = p.DrivingDemo.findNpc(driverSpec.uid, driverSpec.generation)
+        if not body or body ~= driverBody or body:isDead() then return end
+        return actor, body
+    end)
+    if not valid or not driverActor or not npc then return false, "driver_changed" end
+    local keys = p.VehicleArrivalKeys
+    if not keys or type(keys.grant) ~= "function" then return false, "driver_key_service_unavailable" end
+    local keyOK, granted, keyReason = pcall(keys.grant, car, npc, driverActor)
+    if not keyOK or granted ~= true then
+        return false, "driver_key_failed:" .. tostring(keyOK and keyReason or granted)
+    end
+    -- Do all fallible planning before releasing the old session.
+    if not S.releaseCar(vehicleId, caravan.id) then return false, "foreign_session" end
+    owner.bindings = owner.bindings or {}
+    local registry = p.ActorRegistry
+    for _, member in ipairs(crew) do
+        if registry and type(registry.updateTransient)=="function" then
+            local readOK, actor=pcall(registry.read,member.uid)
+            if readOK and actor then pcall(registry.updateTransient,member.uid,actor.revision,function(record)
+                record.memory = record.memory or {}
+                record.memory.arrivalObjective=nil
+            end) end
+        end
+    end
     local T = p.DrivingTuning
     local tuning = T.copy()
     tuning.speedKmh = caravan.speedKmh
@@ -562,15 +683,15 @@ function S.recrew(caravan, vehicleId, route, limit, reserved)
     local old = { player = player, systemArrival = true, tuning = tuning, speedKmh = caravan.speedKmh, cruiseSpeed = caravan.speedKmh / 3.6,
         route = points, boardingDepart = true, onWaypointReached = not (type(isServer) == "function" and isServer()) and owner.waypointReached or nil }
     local binding = { vehicleId = vehicleId, player = player, crew = crew, revision = ((owner.bindings[vehicleId] and owner.bindings[vehicleId].revision) or 0) + 1,
-        status = "Caravan crew boarding." }
+        status = "Caravan crew boarding.", restoredCrew = restoredRiders or nil }
     owner.bindings[vehicleId] = binding
     if type(p.DrivingFleet.rememberVehicle) == "function" then pcall(p.DrivingFleet.rememberVehicle, binding, car) end
     owner.tunings = owner.tunings or {}
     owner.allowRiders = owner.allowRiders or {}
     owner.carModes = owner.carModes or {}
     owner.tunings[vehicleId] = tuning
-    owner.allowRiders[vehicleId] = false
-    owner.carModes[vehicleId] = "npc"
+    owner.allowRiders[vehicleId] = restoredRiders == true
+    owner.carModes[vehicleId] = restoredRiders and "mixed" or "npc"
     p.VehicleArrivals.active[vehicleId] = car
     p.VehicleArrivals.journeys[vehicleId] = { deadline = A.now() + 86400000, player = player, target = { x = points[#points].x, y = points[#points].y } }
     local ok, s, why = pcall(p.DrivingLifecycle.create, owner, old, car, crew, token, points, true)
@@ -580,7 +701,11 @@ function S.recrew(caravan, vehicleId, route, limit, reserved)
         local L = p.DrivingLifecycle
         local record = L.suspend(owner, s, false)
         if record == nil then
-            S.releaseCar(vehicleId)
+            S.releaseCar(vehicleId, caravan.id)
+            if restoredRiders then
+                owner.bindings[vehicleId] = binding
+                owner.allowRiders[vehicleId], owner.carModes[vehicleId] = true, "mixed"
+            end
             return false, "suspend_refused"
         end
         record.resume, record.handoff = true, true
@@ -598,9 +723,10 @@ end
 -- gets out and stays with the caravan on foot until the ledger takes them back.
 function S.abandon(caravan, vehicleId)
     local p = P()
+    local car = type(getVehicleById) == "function" and getVehicleById(vehicleId) or nil
+    if car == nil or A.vehicleTag(car) ~= caravan.id or A.vehicleHasPlayer(car) then return false end
     local owner, s = S.sessionOf(vehicleId)
-    if s ~= nil and p ~= nil and p.DrivingDemo ~= nil then pcall(p.DrivingDemo.release, s) end
-    S.releaseCar(vehicleId)
+    if not S.releaseCar(vehicleId, caravan.id) then return false end
     for index = #(caravan.vehicleIds or {}), 1, -1 do
         if caravan.vehicleIds[index] == vehicleId then table.remove(caravan.vehicleIds, index) end
     end

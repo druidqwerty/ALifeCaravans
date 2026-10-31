@@ -43,7 +43,7 @@ function C.setKnown(entries)
     local fresh = {}
     for id, entry in pairs(entries or {}) do
         local previous = C.known[id]
-        if previous ~= nil then
+        if previous ~= nil and previous.caravanId == entry.caravanId then
             if previous.trip == entry.trip then
                 entry.goalIndex = math.max(entry.goalIndex or 1, previous.goalIndex or 1)
                 entry.arrivedSent = previous.arrivedSent
@@ -60,6 +60,7 @@ function C.setKnown(entries)
         fresh[id] = entry
     end
     C.known = fresh
+    if A.Physics.sweepSP then A.Physics.sweepSP() end
 end
 
 function C.sessionFor(id)
@@ -97,8 +98,15 @@ function C.legFor(entry, s, fresh)
     if x == nil then return nil, "no vehicle position" end
     local tail = (not fresh) and s.route and s.route[#s.route] or nil
     local from = tail and { x = tail.x, y = tail.y } or { x = x, y = y }
-    local goal = C.goalFor(entry, from.x, from.y)
+    -- Only physical progress advances the shared goal cursor. A queued tail
+    -- reaching the destination is not an arrival (nor an escort reward).
+    local goal = C.goalFor(entry, x, y)
     if goal == nil then return nil, "arrived" end
+    if tail then
+        local lookahead = {goals=entry.goals, goalIndex=entry.goalIndex}
+        goal = C.goalFor(lookahead, from.x, from.y)
+        if goal == nil then return nil, "route_queued" end
+    end
     local scene = A.Roads.scene(C.localPlayer())
     local points, info = A.Roads.scout(scene, from, goal, { maxPoints = 10 })
     if #points == 0 then return nil, info.reason or "no road" end
@@ -362,6 +370,7 @@ function C.tick()
     local now = A.now()
     if now < C.nextTickMs then return end
     C.nextTickMs = now + C.intervalMs
+    if A.Physics.sweepSP then A.Physics.sweepSP() end
     if ProjectALife == nil or ProjectALife.DrivingDemoClient == nil then return end
     for _, group in pairs(C.groups()) do
         for position = 1, #group do

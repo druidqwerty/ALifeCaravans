@@ -79,8 +79,10 @@ function INV:getCountTypeRecurse(t) local n = 0 for _, item in ipairs(ITEMS) do 
 function INV:getFirstTypeRecurse(t) for _, item in ipairs(ITEMS) do if item.type == t then return item end end return nil end
 function INV:Remove(item) for i, it in ipairs(ITEMS) do if it == item then table.remove(ITEMS, i) return end end end
 function INV:AddItem(t)
+    if type(t) == "table" then ITEMS[#ITEMS + 1] = t return t end
     ITEMS[#ITEMS + 1] = { type = t, getContainer = function() return INV end, getFullType = function() return t end,
         getDisplayName = function() return getItemNameFromFullType(t) end }
+    return ITEMS[#ITEMS]
 end
 function INV:getItems() return { size = function() return #ITEMS end, get = function(_, i) return ITEMS[i + 1] end } end
 for _ = 1, 100 do INV:AddItem("Base.Money") end
@@ -265,6 +267,18 @@ local function makeALife()
         remove = function(uid, rev, reason) ACTORS[uid] = nil REMOVED_ACTORS = REMOVED_ACTORS + 1 return true end,
         updateTransient = function(uid, rev, fn) fn(ACTORS[uid]) return true end,
     }
+    -- Official ArrivalKeys contract: persistent memory plus idempotent inventory
+    -- key grant to the selected actor, not to the original/dead leader.
+    KEY_GRANTS = {}
+    P.VehicleArrivalKeys = { grant = function(car, npc, actor)
+        assert(actor == ACTORS[actor.uid] and actor.lifecycle == "active", "fresh living actor required")
+        KEY_GRANTS[#KEY_GRANTS + 1] = {car=car,npc=npc,actor=actor}
+        npc.testKeys = npc.testKeys or {}
+        npc.testKeys[car.id] = npc.testKeys[car.id] or {keyId=car.id}
+        actor.memory = actor.memory or {}
+        actor.memory.arrivalCarKey = {keyId=car.id,itemType="Base.CarKey",name="Car key"}
+        return true
+    end }
     P.SpawnService = { dehydrate = function(uid, reason) if ACTORS[uid] then ACTORS[uid].lifecycle = "dormant" DEHYDRATED = DEHYDRATED + 1 return true end return false end }
     TOLERATED = {}
     P.Talk = { shellFor = function(uid) return SHELLS[uid] end, tolerate = function(record, key, untilMs) TOLERATED[key] = untilMs end }
@@ -447,7 +461,8 @@ local store = Ledger.open()
 check("ledger migrated to schema 2", store.schema == 2 and store.favor ~= nil)
 local old = Ledger.get("caravan:1")
 check("old offers became stock", old ~= nil and old.stock ~= nil and old.stock[1].item == "Base.TinnedBeans" and old.stock[1].count == 2 and old.offers == nil)
-check("old rendered caravan reset to the ledger", old.state == "offline" and #old.vehicleIds == 0)
+check("old rendered caravan quarantines stale IDs for reload recovery", old.state == "recovering"
+    and #old.vehicleIds == 0 and Ledger.reloadPending[old.id] ~= nil)
 Ledger.reset()
 
 -- 2. settings
@@ -679,7 +694,8 @@ check("barter with goods", INV:getCountTypeRecurse("Base.Cigarettes") == cig - 2
 check("caravan resells bartered goods", (function() for _, row in ipairs(caravan.stock) do if row.item == "Base.Cigarettes" then return true end end return false end)())
 check("duplicate transaction ignored", (function()
     local last
-    for _, r in ipairs(received) do if r.command == "dealOk" then last = r.args end end
+    for _, r in ipairs(received) do if r.command == "dealReceipt" then last = r.args end end
+    if last == nil then return false end
     local before = INV:getCountTypeRecurse("Base.Bandage")
     Client.performDeal(last)
     return INV:getCountTypeRecurse("Base.Bandage") == before
@@ -847,6 +863,11 @@ check("no errors counted", A.metrics.errors == 0, A.metrics.errors)
 assert(loadfile(MOD_ROOT .. "/tools/test_sos.lua"))()(check, newContext)
 assert(loadfile(MOD_ROOT .. "/tools/test_recrew.lua"))()(check, newVehicle)
 assert(loadfile(MOD_ROOT .. "/tools/test_physics.lua"))()(check)
+assert(loadfile(MOD_ROOT .. "/tools/test_crew.lua"))()(check, newVehicle)
+assert(loadfile(MOD_ROOT .. "/tools/test_persistence.lua"))()(check)
+assert(loadfile(MOD_ROOT .. "/tools/test_arrival.lua"))()(check)
+assert(loadfile(MOD_ROOT .. "/tools/test_ownership.lua"))()(check)
+failed = failed + dofile(MOD_ROOT .. "/tools/test_interactions.lua")
 local noticeCount = #NOTICES
 Client.notice("B42.21 notice overload regression")
 check("notice uses the verified B42.21 HaloTextHelper overload", #NOTICES == noticeCount + 1)

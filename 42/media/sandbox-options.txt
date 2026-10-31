@@ -280,15 +280,6 @@ option ALifeCaravans.MergeCaravans
 	translation = ALifeCaravans_MergeCaravans,
 }
 
-option ALifeCaravans.PlayerCanFormCaravan
-{
-	type = boolean,
-	default = true,
-
-	page = ALifeCaravans,
-	translation = ALifeCaravans_PlayerCanFormCaravan,
-}
-
 option ALifeCaravans.CaravanCargo
 {
 	type = boolean,
@@ -296,15 +287,6 @@ option ALifeCaravans.CaravanCargo
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_CaravanCargo,
-}
-
-option ALifeCaravans.DynamicRoutes
-{
-	type = boolean,
-	default = true,
-
-	page = ALifeCaravans,
-	translation = ALifeCaravans_DynamicRoutes,
 }
 
 option ALifeCaravans.WeatherEffects
@@ -325,15 +307,6 @@ option ALifeCaravans.NightTravelPenalty
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_NightTravelPenalty,
-}
-
-option ALifeCaravans.FactionReputationImpact
-{
-	type = boolean,
-	default = true,
-
-	page = ALifeCaravans,
-	translation = ALifeCaravans_FactionReputationImpact,
 }
 
 option ALifeCaravans.DistressCalls

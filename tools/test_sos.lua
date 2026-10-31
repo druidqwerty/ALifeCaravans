@@ -17,6 +17,7 @@ return function(check, newContext)
             vehicles = { "Base.CarNormal" }, route = { "townA", "townB" }, leg = 1, t = 0.3, goals = {}, stock = {},
             ambush = { state = "fighting", kind = "zombies", sinceMs = CLOCK } })
         PLAYER.x, PLAYER.y = car.x, car.y
+        A.tagVehicle(car, c.id, 1)
         S.start(c, CLOCK)
         return c, car, npc
     end
@@ -55,6 +56,7 @@ return function(check, newContext)
     local oldClient = isClient
     isClient = function() return true end
     check("SOS client cannot accept authoritatively", not S.accept(c, PLAYER) and c.sos.owner == nil)
+    check("SOS client cannot terminate or pay contract", not S.finish(c, true, "escaped", PLAYER) and c.sos.state == "open")
     isClient = oldClient
     accept(c, car)
     local accepted = c.sos.acceptedMs
@@ -85,6 +87,9 @@ return function(check, newContext)
     c = L.get(c.id)
     check("SOS terminal receipt survives persistence reopen", L.open().sosReceipts[receiptId].reward == 3 and c.sos.state == "done")
     check("SOS replay after reopen cannot pay twice", not S.finish(c, true, "escaped", PLAYER) and L.favor("ivan", c.factionId) == 3)
+    c.sos.state, c.sos.paid = "escape", false
+    check("SOS receipt repairs replayed active snapshot without reward", not S.finish(c, true, "escaped", PLAYER)
+        and c.sos.state == "done" and c.sos.paid and L.favor("ivan", c.factionId) == 3)
 
     c, car, npc = fixture()
     accept(c, car)
@@ -127,6 +132,13 @@ return function(check, newContext)
     CLOCK = CLOCK + 61000
     S.tick(c, CLOCK, rows())
     check("SOS missing physical car fails, never succeeds", c.sos.state == "failed" and L.favor("ivan", c.factionId) == 0)
+    c, car, npc = fixture()
+    accept(c, car)
+    A.tagVehicle(car, "different_caravan", 1)
+    S.tick(c, CLOCK, rows())
+    CLOCK = CLOCK + 61000
+    S.tick(c, CLOCK, rows())
+    check("SOS recycled vehicle ID cannot prove presence or escape", c.sos.state == "failed" and c.sos.reason == "lost")
     c, car, npc = fixture()
     CLOCK = c.sos.deadlineMs
     accept(c, car)

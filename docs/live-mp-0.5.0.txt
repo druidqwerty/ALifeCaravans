@@ -1,0 +1,201 @@
+Caravans 0.5.0 / isolated one-client dedicated MP / run20261031_220827
+Mandatory dependencies only; controlled ambush cleared after500ms; player observer protected.
+Production seats, sessions, keys, inventory/rewards and vehicle motion are not forced.
+357 Lua +36 native assertions passed. See TEST_0.5.0.md for full SP/MP boundaries.
+
+ALRLive_SOS_result.txt
+PASS real convoy escape 123.15 tiles/30908ms; favor +3 once; duplicate denied
+scope=controlled real one-client MP ambush/accept/boarding/driving/reward; attacker clearance scripted
+1793473816062,10588.047,10266.408,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793473818275,10588.047,10266.408,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793473820565,10588.047,10266.408,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793473822770,10588.047,10266.408,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793473824957,10588.047,10266.408,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793473827165,10588.047,10266.408,state=cover,ambush=boarding,driver=false,distance=0.00,coveredMs=0
+1793473829469,10588.047,10266.408,state=cover,ambush=none,driver=false,distance=0.00,coveredMs=0
+1793473831756,10588.047,10266.408,state=escape,ambush=none,driver=true,distance=0.00,coveredMs=0
+1793473833971,10588.110,10266.976,state=escape,ambush=none,driver=true,distance=0.00,coveredMs=0
+1793473836259,10588.376,10269.682,state=escape,ambush=none,driver=true,distance=1.74,coveredMs=2008
+1793473838457,10588.626,10274.774,state=escape,ambush=none,driver=true,distance=5.53,coveredMs=4099
+1793473840770,10588.529,10282.162,state=escape,ambush=none,driver=true,distance=10.90,coveredMs=6110
+1793473843058,10588.390,10292.658,state=escape,ambush=none,driver=true,distance=18.64,coveredMs=8207
+1793473845271,10588.455,10304.032,state=escape,ambush=none,driver=true,distance=28.42,coveredMs=10313
+1793473847466,10588.563,10318.556,state=escape,ambush=none,driver=true,distance=40.24,coveredMs=12400
+1793473849859,10588.537,10336.567,state=escape,ambush=none,driver=true,distance=68.72,coveredMs=16508
+1793473852257,10588.465,10356.804,state=escape,ambush=none,driver=true,distance=86.32,coveredMs=18611
+1793473854466,10588.484,10372.774,state=escape,ambush=none,driver=true,distance=101.93,coveredMs=20696
+1793473856773,10588.513,10389.079,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473859065,10588.505,10396.632,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473861459,10588.505,10396.677,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473863575,10588.505,10396.673,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473865860,10588.505,10396.668,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473868259,10588.505,10396.664,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473870475,10588.505,10396.659,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473872757,10588.505,10396.655,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473875064,10588.505,10396.650,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473877372,10588.505,10396.646,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473879656,10588.505,10396.643,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473881968,10588.505,10396.638,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473884167,10588.505,10396.634,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473886369,10588.505,10396.630,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473888665,10588.505,10396.625,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473890971,10588.505,10396.621,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473893268,10588.505,10396.616,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473895569,10588.505,10396.611,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473897867,10588.505,10396.607,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473900263,10588.505,10396.603,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473902570,10588.505,10396.599,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473904759,10588.505,10396.594,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473906961,10588.505,10396.590,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473909158,10588.505,10396.586,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473911367,10588.505,10396.582,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473913671,10588.505,10396.577,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473915869,10588.505,10396.573,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473918064,10588.506,10396.569,state=escape,ambush=none,driver=true,distance=117.54,coveredMs=22706
+1793473920271,10588.513,10397.051,state=escape,ambush=none,driver=true,distance=118.02,coveredMs=24712
+1793473922468,10588.844,10399.047,state=escape,ambush=none,driver=true,distance=119.78,coveredMs=26713
+1793473924670,10589.517,10400.614,state=escape,ambush=none,driver=true,distance=121.52,coveredMs=28801
+1793473926870,10590.585,10402.003,state=done,ambush=none,driver=true,distance=123.15,coveredMs=30908
+
+ALC_Audit_result.txt
+PASS hail/trade/UI/timed stop; actual on-foot crew reboarded and drove 10.69 tiles
+scope=production hail/trade; inventory/UI; timed halt; observed spontaneous exit/reboard/depart
+1793473927363,hail,10590.78,10402.19,driver=true,session=driving,halted=nil
+1793473929469,trade,10591.43,10402.71,driver=true,session=seated,halted=true
+1793473931570,halt,10591.43,10402.71,driver=true,session=seated,halted=true
+1793473933668,halt,10591.43,10402.70,driver=true,session=seated,halted=true
+1793473935760,halt,10591.43,10402.70,driver=true,session=seated,halted=true
+1793473937860,depart,10591.42,10402.70,driver=true,session=driving,halted=nil
+1793473939962,depart,10592.24,10403.23,driver=true,session=driving,halted=nil
+1793473942062,depart,10594.03,10403.99,driver=true,session=driving,halted=nil
+1793473944166,depart,10595.67,10404.26,driver=true,session=driving,halted=nil
+1793473946259,depart,10597.26,10404.13,driver=true,session=driving,halted=nil
+1793473948367,depart,10598.83,10403.60,driver=true,session=driving,halted=nil
+1793473950465,depart,10600.27,10402.73,driver=true,session=driving,halted=nil
+1793473952569,depart,10601.39,10401.61,driver=true,session=driving,halted=nil
+1793473954658,reboard,10601.52,10401.43,driver=false,session=walkaway,halted=nil
+1793473956765,reboard,10601.52,10401.43,driver=false,session=nil,halted=nil
+1793473958861,reboard,10601.52,10401.43,driver=false,session=nil,halted=nil
+1793473960970,reboard,10601.52,10401.43,driver=false,session=approach,halted=nil
+1793473963066,escape,10601.52,10401.43,driver=true,session=starting,halted=nil
+1793473965167,escape,10601.53,10401.42,driver=true,session=driving,halted=nil
+1793473967260,escape,10602.20,10400.62,driver=true,session=driving,halted=nil
+1793473969371,escape,10603.66,10399.44,driver=true,session=driving,halted=nil
+1793473971456,escape,10604.96,10398.84,driver=true,session=driving,halted=nil
+1793473973567,escape,10606.81,10398.49,driver=true,session=driving,halted=nil
+1793473975662,escape,10607.62,10398.48,driver=true,session=driving,halted=nil
+1793473977765,escape,10607.95,10398.49,driver=true,session=driving,halted=nil
+1793473979868,escape,10608.31,10398.50,driver=true,session=driving,halted=nil
+1793473981965,escape,10608.63,10398.51,driver=true,session=driving,halted=nil
+1793473984056,escape,10608.96,10398.53,driver=true,session=driving,halted=nil
+1793473986167,escape,10609.18,10398.55,driver=true,session=driving,halted=nil
+1793473988266,escape,10608.25,10398.47,driver=true,session=driving,halted=nil
+1793473990358,escape,10606.60,10398.34,driver=true,session=driving,halted=nil
+1793473992461,escape,10604.65,10398.18,driver=true,session=driving,halted=nil
+1793473994557,escape,10604.35,10398.16,driver=true,session=driving,halted=nil
+1793473996656,escape,10604.32,10398.16,driver=true,session=driving,halted=nil
+1793473998757,escape,10604.03,10398.14,driver=true,session=driving,halted=nil
+1793474000861,escape,10603.70,10398.11,driver=true,session=driving,halted=nil
+1793474002968,escape,10603.38,10398.08,driver=true,session=driving,halted=nil
+1793474005069,escape,10603.04,10398.05,driver=true,session=driving,halted=nil
+1793474007159,escape,10602.65,10398.02,driver=true,session=driving,halted=nil
+1793474009256,escape,10602.47,10398.00,driver=true,session=driving,halted=nil
+1793474011365,escape,10602.12,10397.95,driver=true,session=driving,halted=nil
+1793474013469,escape,10601.59,10397.83,driver=true,session=driving,halted=nil
+1793474015571,escape,10601.22,10397.71,driver=true,session=driving,halted=nil
+1793474017660,escape,10600.87,10397.56,driver=true,session=driving,halted=nil
+1793474019768,escape,10600.37,10397.30,driver=true,session=driving,halted=nil
+1793474021858,escape,10599.94,10397.01,driver=true,session=driving,halted=nil
+1793474023972,escape,10599.50,10396.63,driver=true,session=driving,halted=nil
+1793474026061,escape,10599.11,10396.22,driver=true,session=driving,halted=nil
+1793474028171,escape,10598.78,10395.76,driver=true,session=driving,halted=nil
+1793474030270,escape,10598.95,10396.07,driver=true,session=driving,halted=nil
+1793474032360,escape,10599.78,10398.02,driver=true,session=driving,halted=nil
+1793474034470,escape,10600.13,10400.14,driver=true,session=driving,halted=nil
+1793474036561,escape,10599.93,10402.94,driver=true,session=driving,halted=nil
+1793474038661,escape,10599.67,10403.92,driver=true,session=driving,halted=nil
+1793474040758,escape,10598.94,10405.34,driver=true,session=driving,halted=nil
+1793474042865,escape,10597.34,10407.22,driver=true,session=driving,halted=nil
+
+ALRLive_driver_death_result.txt
+PASS car=246 old=palife:1793473810768:1 newOriginalSurvivor=palife:1793473810974:2 key=true realDistance=10.06 no new car/NPC
+scope=one engine Kill(nil), upstream actor death, original survivor becomes driver with authoritative car key; same car drives >=10 tiles
+ARMED after ordinary two-crew audit PASS; no forced seats, sessions, keys or driving
+SELECT car=246 originalDriver=palife:1793473810768:1 generation=1
+SURVIVOR uid=palife:1793473810974:2 generation=1 originalSeat=1
+KILL_ONCE uid=palife:1793473810768:1 attacker=nil
+t=581 phase=recover oldDead=true deathEvent=true registryDead=true driver=nil key=false engine=true distance=0.00
+t=2693 phase=recover oldDead=true deathEvent=true registryDead=true driver=nil key=false engine=true distance=0.00
+t=4784 phase=recover oldDead=true deathEvent=true registryDead=true driver=nil key=false engine=true distance=0.00
+t=6892 phase=recover oldDead=true deathEvent=true registryDead=true driver=nil key=false engine=true distance=0.00
+t=8995 phase=recover oldDead=false deathEvent=true registryDead=true driver=nil key=false engine=true distance=0.00
+t=11090 phase=recover oldDead=false deathEvent=true registryDead=true driver=nil key=false engine=true distance=0.00
+t=13183 phase=recover oldDead=false deathEvent=true registryDead=true driver=nil key=false engine=true distance=0.00
+t=15290 phase=recover oldDead=false deathEvent=true registryDead=true driver=nil key=false engine=true distance=0.00
+t=17395 phase=recover oldDead=false deathEvent=true registryDead=true driver=nil key=false engine=true distance=0.00
+t=19481 phase=recover oldDead=false deathEvent=true registryDead=true driver=nil key=false engine=false distance=0.00
+t=21586 phase=recover oldDead=false deathEvent=true registryDead=true driver=nil key=false engine=false distance=0.00
+t=23680 phase=recover oldDead=false deathEvent=true registryDead=true driver=nil key=false engine=false distance=0.00
+t=25795 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=false distance=0.00
+t=27892 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=29985 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=32081 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=34183 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=36280 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=38390 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=40595 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=42700 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=44784 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=46885 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=48992 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=51082 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=53190 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=55295 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=57386 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=59494 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=61594 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=63690 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=65782 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=67881 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=69983 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=72089 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=74180 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=76292 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=78393 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=80486 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=82587 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=84681 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=86789 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=88881 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=90988 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=93084 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=95191 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=97295 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=99382 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=101489 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=103593 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=105681 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=107782 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=109894 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=111986 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=114080 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=116192 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=118296 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=120384 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=122490 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=124587 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=126682 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=128788 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=130890 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+t=132993 phase=recover oldDead=false deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.00
+OBSERVATION_CORRECTION pooled old shell is not a living-state oracle; same one-shot case, original180s deadline retained
+REPLACED originalSurvivor=palife:1793473810974:2 actualSeat=0 keyId=27936360
+t=135090 phase=drive confirmedDeath=true deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=0.27
+t=137190 phase=drive confirmedDeath=true deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=1.97
+t=139293 phase=drive confirmedDeath=true deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=3.57
+t=141385 phase=drive confirmedDeath=true deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=5.31
+t=143493 phase=drive confirmedDeath=true deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=6.93
+t=145581 phase=drive confirmedDeath=true deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=8.07
+t=147683 phase=drive confirmedDeath=true deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=9.05
+t=149794 phase=drive confirmedDeath=true deathEvent=true registryDead=true driver=palife:1793473810974:2 key=true engine=true distance=9.80
+RESULT PASS car=246 old=palife:1793473810768:1 newOriginalSurvivor=palife:1793473810974:2 key=true realDistance=10.06 no new car/NPC

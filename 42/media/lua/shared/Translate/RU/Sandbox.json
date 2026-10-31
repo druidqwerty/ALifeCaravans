@@ -51,5 +51,16 @@
     "Sandbox_ALifeCaravans_Markers": "Караваны на картах игроков",
     "Sandbox_ALifeCaravans_Markers_tooltip": "Разрешить метки на карте мира и миникарте (каждый игрок может отключить их в Настройки > Моды).",
     "Sandbox_ALifeCaravans_Debug": "Отладочный лог",
-    "Sandbox_ALifeCaravans_Debug_tooltip": "Дополнительные строки [ALC] в console.txt (создание, появление, маршруты)."
+    "Sandbox_ALifeCaravans_Debug_tooltip": "Дополнительные строки [ALC] в console.txt (создание, появление, маршруты).",
+    "Sandbox_ALifeCaravans_EventCaravans": "Караваны с особым грузом",
+    "Sandbox_ALifeCaravans_ScavengingEnabled": "Пополнение товаров в пути",
+    "Sandbox_ALifeCaravans_BreakdownChance": "Вероятность техосмотра в пути (проценты)",
+    "Sandbox_ALifeCaravans_RefuelEnabled": "Заправка у АЗС",
+    "Sandbox_ALifeCaravans_MergeCaravans": "Объединение близких караванов одной фракции",
+    "Sandbox_ALifeCaravans_CaravanCargo": "Взаимодействие с грузом каравана",
+    "Sandbox_ALifeCaravans_WeatherEffects": "Влияние погоды и ночи на скорость",
+    "Sandbox_ALifeCaravans_NightTravelPenalty": "Ночная скорость, проценты",
+    "Sandbox_ALifeCaravans_DistressCalls": "Радиосигналы бедствия",
+    "Sandbox_ALifeCaravans_LivingWorld": "Остановки у орд и дружественных баз",
+    "Sandbox_ALifeCaravans_BreakdownChance_tooltip": "Вероятность при проверке каждые две минуты: остановка на 45 секунд для техосмотра. Двигатель не повреждается. 0 — отключить."
 }

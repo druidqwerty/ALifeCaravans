@@ -4,15 +4,18 @@ return function(check, newVehicle)
     local original = A.Spawn.survivors
     local car = newVehicle("Base.CarNormal", 100, 100)
     local other = newVehicle("Base.CarNormal", 102, 100)
-    local driver, passenger = {}, {}
+    local driver, passenger = newShell("recrew-driver","fixture"), newShell("recrew-foot","fixture")
     local rows = {
         {uid="recrew-driver",generation=1,npc=driver,inCar=car},
         {uid="recrew-foot",generation=1,npc=passenger},
     }
     SHELLS[rows[1].uid], SHELLS[rows[2].uid] = driver, passenger
+    for _, row in ipairs(rows) do ACTORS[row.uid] = {uid=row.uid,generation=1,lifecycle="active",revision=1,memory={}} end
     car.passengers[0] = driver
     A.Spawn.survivors = function() return rows end
-    local c = {speedKmh=30,legPoints={{x=130,y=100}},actorUids={}}
+    local c = {id="recrew-fixture",speedKmh=30,legPoints={{x=130,y=100}},actorUids={rows[1].uid,rows[2].uid}}
+    A.tagVehicle(car,c.id,1)
+    A.tagVehicle(other,c.id,2)
     local reserved = {}
     local ok, count = A.Spawn.recrew(c,car.id,nil,1,reserved)
     local binding = P.DrivingDemoClient.bindings[car.id]
@@ -35,7 +38,10 @@ return function(check, newVehicle)
     rows[1].inCar = car
     ok = A.Spawn.recrew(c,car.id,nil,1)
     binding = P.DrivingDemoClient.bindings[car.id]
-    check("player passenger seat skipped", ok and binding.crew[2].seat==2 and car.passengers[1]==PLAYER)
+    check("occupied live session cannot be replaced by recrew", not ok and car.passengers[1]==PLAYER)
     A.Spawn.survivors = original
     SHELLS[rows[1].uid], SHELLS[rows[2].uid] = nil,nil
+    ACTORS[rows[1].uid], ACTORS[rows[2].uid] = nil,nil
+    assert(loadfile(MOD_ROOT .. "/tools/test_rider_reload.lua"))()(check)
+    assert(loadfile(MOD_ROOT .. "/tools/test_driver_keys.lua"))()(check)
 end

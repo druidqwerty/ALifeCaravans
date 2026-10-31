@@ -8,7 +8,7 @@ ALifeCaravans = ALifeCaravans or {}
 local A = ALifeCaravans
 
 A.MOD_ID = "ALifeCaravans"
-A.VERSION = "0.4.1"
+A.VERSION = "0.5.0"
 A.TAG = "[ALC]"
 A.MODULE = "ALifeCaravans"        -- client<->server command module name
 A.MODDATA_ID = "ALifeCaravanId"   -- vehicle ModData key (authoritative side only)
@@ -42,15 +42,12 @@ A.defaults = {
     -- NEW FEATURES:
     eventCaravans = true,         -- special event caravans (supply drops, refugees, etc.)
     scavengingEnabled = true,     -- caravans can scavenge while travelling
-    breakdownChance = 10,         -- % chance per trip for a breakdown event
+    breakdownChance = 10,         -- % per two-minute check for a temporary inspection
     refuelEnabled = true,         -- caravans stop at gas stations
     mergeCaravans = true,         -- same-faction caravans can merge
-    playerCanFormCaravan = true,  -- players can recruit NPCs and form their own caravan
     caravanCargo = true,          -- physical cargo in trunks that can be looted
-    dynamicRoutes = true,         -- routes adapt to road conditions, bridge status
     weatherEffects = true,        -- weather affects speed and events
     nightTravelPenalty = 0.7,     -- speed multiplier at night
-    factionReputationImpact = true, -- actions affect faction reputation more deeply
     distressCalls = true,         -- caravans can send distress signals
     sosContracts = true,          -- verifiable rescue escort after an ambush
     sosTimeoutMinutes = 10,
@@ -226,12 +223,9 @@ function A.refreshSettings()
     s.breakdownChance = A.clamp(sandbox.BreakdownChance, 0, 50, d.breakdownChance)
     s.refuelEnabled = sandbox.RefuelEnabled ~= false
     s.mergeCaravans = sandbox.MergeCaravans ~= false
-    s.playerCanFormCaravan = sandbox.PlayerCanFormCaravan ~= false
     s.caravanCargo = sandbox.CaravanCargo ~= false
-    s.dynamicRoutes = sandbox.DynamicRoutes ~= false
     s.weatherEffects = sandbox.WeatherEffects ~= false
     s.nightTravelPenalty = A.clamp(sandbox.NightTravelPenalty, 0.3, 1.0, d.nightTravelPenalty)
-    s.factionReputationImpact = sandbox.FactionReputationImpact ~= false
     s.distressCalls = sandbox.DistressCalls ~= false
     s.sosContracts = sandbox.SOSContracts ~= false
     s.sosTimeoutMinutes = A.clamp(sandbox.SOSTimeoutMinutes, 2, 30, d.sosTimeoutMinutes)

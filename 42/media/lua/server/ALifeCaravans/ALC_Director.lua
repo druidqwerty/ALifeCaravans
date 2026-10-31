@@ -17,6 +17,7 @@ require "ALifeCaravans/05_ALC_Trade"
 require "ALifeCaravans/ALC_Ledger"
 require "ALifeCaravans/ALC_Spawn"
 require "ALifeCaravans/ALC_SOSMonitor"
+require "ALifeCaravans/ALC_Crew"
 
 local A = ALifeCaravans
 local D = { nextTickMs = 0, intervalMs = 2000, lastTickMs = nil, renderCooldownUntilMs = 0, publishAtMs = 0,
@@ -330,6 +331,7 @@ function D.newTrip(G, caravan, fromId)
     caravan.goals = D.goalsFor(G, caravan)
     caravan.goalIndex = 1
     caravan.arrivals = 0
+    caravan.arrivedCars = {}
     caravan.trip = (caravan.trip or 0) + 1
     caravan.ambush = nil
     D.refreshStock(caravan)
@@ -420,6 +422,7 @@ function D.found(now, players)
 end
 
 function D.retire(caravan, reason)
+    if D.ridersAboard(caravan) then return false end
     A.SOS.finish(caravan, false, "lost")
     if caravan.state == "rendered" or caravan.state == "rendering" or caravan.state == "fighting" or caravan.state == "stranded" then
         A.Spawn.teardown(caravan, "alc_retire")
@@ -431,6 +434,7 @@ function D.retire(caravan, reason)
 end
 
 function D.release(caravan, reason)
+    if D.ridersAboard(caravan) then return false end
     A.SOS.onRelease(caravan, reason)
     local G = D.graph()
     local kept = A.Spawn.teardown(caravan, "alc_release")
@@ -450,7 +454,7 @@ end
 function D.countRendered()
     local count, cars = 0, 0
     for _, caravan in ipairs(A.Ledger.list()) do
-        if caravan.state == "rendering" or caravan.state == "rendered" or caravan.state == "fighting" then
+        if caravan.state == "rendering" or caravan.state == "rendered" or caravan.state == "fighting" or caravan.state == "recovering" then
             count = count + 1
             cars = cars + #(caravan.vehicleIds or {})
         end
@@ -511,10 +515,10 @@ function D.onSpawnOutcome(id, outcome, unit)
         A.log("unit 2 spawn failed:", caravan.id, reason)
         for index = #caravan.vehicleIds, 1, -1 do
             local car = getVehicleById(caravan.vehicleIds[index])
-            local _, carIndex = A.vehicleTag(car)
-            if car ~= nil and (tonumber(carIndex) or 0) > 2 then
-                A.Spawn.teardownVehicles({ caravan.vehicleIds[index] })
-                table.remove(caravan.vehicleIds, index)
+            local tag, carIndex = A.vehicleTag(car)
+            if car ~= nil and tag == caravan.id and (tonumber(carIndex) or 0) > 2 and not A.vehicleHasPlayer(car) then
+                A.Spawn.teardownVehicles({ caravan.vehicleIds[index] }, caravan.id)
+                if getVehicleById(caravan.vehicleIds[index]) == nil then table.remove(caravan.vehicleIds, index) end
             end
         end
         caravan.state = "rendered"
@@ -524,6 +528,7 @@ function D.onSpawnOutcome(id, outcome, unit)
         D.publishDirty = true
         return
     end
+    if D.preserveOccupiedRender(caravan, A.now()) then return end
     A.Spawn.teardown(caravan, "alc_spawn_failed")
     caravan.state = "offline"
     caravan.units = 0
@@ -541,26 +546,11 @@ function D.onSessionFinished(caravanId, vehicleId, reason)
     reason = tostring(reason or "stopped")
     if caravan.ambush ~= nil and caravan.ambush.state == "fighting" then return end
     if caravan.state ~= "rendered" and caravan.state ~= "fighting" then return end
-    caravan.recrew = caravan.recrew or {}
-    caravan.recrewCount = caravan.recrewCount or {}
-    local key = tostring(vehicleId)
-    caravan.recrewCount[key] = (caravan.recrewCount[key] or 0) + 1
-    if caravan.recrewCount[key] > 3 then
-        A.log(caravan.id, "car", vehicleId, "gave up after repeated stops:", reason)
-        D.abandonCar(caravan, vehicleId, "stops")
-        return
-    end
-    caravan.recrew[key] = { dueMs = A.now() + 4000, reason = reason, vehicleId = vehicleId }
-    A.log(caravan.id, "car", vehicleId, "stopped (" .. reason .. "); re-crewing")
-    if string.find(reason, "Driver died", 1, true) or string.find(reason, "died", 1, true) then
-        local shell = D.driverShell(caravan)
-        if shell ~= nil then A.Lines.say(shell, "driver_down", { uid = caravan.actorUids and caravan.actorUids[1], cooldownMs = 30000 }) end
-    end
-    D.publishDirty = true
+    A.Crew.finished(caravan, vehicleId, reason)
 end
 
 function D.abandonCar(caravan, vehicleId, why)
-    A.Spawn.abandon(caravan, vehicleId)
+    if not A.Spawn.abandon(caravan, vehicleId) then return false end
     caravan.recrew = caravan.recrew or {}
     caravan.recrew[tostring(vehicleId)] = nil
     A.log(caravan.id, "car", vehicleId, "abandoned:", why)
@@ -586,8 +576,8 @@ function D.resume(caravan)
     caravan.halted = nil
     caravan.haltUntilMs = nil
     caravan.haltReason = nil
-    caravan.riders = nil
-    A.Spawn.setRiders(caravan, false)
+    caravan.riders = D.ridersAboard(caravan) or nil
+    A.Spawn.setRiders(caravan, caravan.riders == true)
     D.publish(true)
 end
 
@@ -596,7 +586,9 @@ function D.vehiclePositions(caravan)
     for _, id in ipairs(caravan.vehicleIds or {}) do
         local car = type(getVehicleById) == "function" and getVehicleById(id) or nil
         local x, y = A.xyz(car)
-        if x ~= nil then out[#out + 1] = { id = id, x = x, y = y, vehicle = car } else missing = missing + 1 end
+        if x ~= nil and A.vehicleTag(car) == caravan.id then
+            out[#out + 1] = { id = id, x = x, y = y, vehicle = car }
+        else missing = missing + 1 end
     end
     return out, missing
 end
@@ -604,38 +596,26 @@ end
 function D.ridersAboard(caravan)
     for _, id in ipairs(caravan.vehicleIds or {}) do
         local car = getVehicleById(id)
-        if car ~= nil and A.vehicleHasPlayer(car) then return true end
+        if car ~= nil and A.vehicleTag(car) == caravan.id and A.vehicleHasPlayer(car) then return true end
     end
     return false
 end
 
+-- A failed/late spawn callback must not turn a player's real car into an
+-- offline caravan and later spawn another copy of it.
+function D.preserveOccupiedRender(caravan, now)
+    if not D.ridersAboard(caravan) then return false end
+    caravan.state = #(caravan.actorUids or {}) > 0 and "rendered" or "stranded"
+    caravan.pendingUnit, caravan.requestId = nil, nil
+    caravan.renderedAtMs, caravan.strandedAtMs = now, now
+    D.publishDirty = true
+    A.Ledger.touch()
+    return true
+end
+
 -- Re-crew requests that came due; cars nobody can drive are abandoned.
 function D.recrewTick(caravan, now)
-    local pending = 0
-    for _, request in pairs(caravan.recrew or {}) do if now >= (request.dueMs or 0) then pending = pending + 1 end end
-    if pending == 0 then return end
-    local free = 0
-    for _, row in ipairs(A.Spawn.survivors(caravan, caravan.x or 0, caravan.y or 0, 60)) do
-        if row.inCar == nil then free = free + 1 end
-    end
-    local limit = math.max(1, math.ceil(free / pending))
-    local reserved = {}
-    for key, request in pairs(caravan.recrew or {}) do
-        if now >= (request.dueMs or 0) then
-            local ok, detail = A.Spawn.recrew(caravan, request.vehicleId, nil, limit, reserved)
-            if ok then
-                caravan.recrew[key] = nil
-                A.log(caravan.id, "car", request.vehicleId, "re-crewed with", detail, "NPC(s)")
-                D.publishDirty = true
-            else
-                request.tries = (request.tries or 0) + 1
-                request.dueMs = now + 5000
-                if request.tries >= 6 or detail == "no_survivors" or detail == "no_car" then
-                    D.abandonCar(caravan, request.vehicleId, tostring(detail))
-                end
-            end
-        end
-    end
+    A.Crew.tick(caravan, now)
 end
 
 -- Cars without fuel or a working engine are left behind.
@@ -644,7 +624,7 @@ function D.carsTick(caravan, now)
     caravan.carCheckAtMs = now + 10000
     for _, id in ipairs(A.copy(caravan.vehicleIds or {})) do
         local car = getVehicleById(id)
-        if car ~= nil and not A.vehicleHasPlayer(car) then
+        if car ~= nil and A.vehicleTag(car) == caravan.id and not A.vehicleHasPlayer(car) then
             local fuel, engine = A.Spawn.carHealth(car)
             if fuel <= 0.3 or engine == false then D.abandonCar(caravan, id, fuel <= 0.3 and "no fuel" or "engine dead") end
         end
@@ -789,7 +769,9 @@ function D.observe(G, caravan, now, players)
         local shell = D.driverShell(caravan)
         if shell ~= nil then A.Lines.say(shell, "farewell", { uid = caravan.actorUids and caravan.actorUids[1] }) end
     end
+    A.Crew.watch(caravan, now)
     D.recrewTick(caravan, now)
+    D.refuelTick(caravan, now, players)
     D.carsTick(caravan, now)
     D.escortTick(caravan, now, players)
     D.ambushTick(caravan, now, players)
@@ -805,7 +787,7 @@ function D.observe(G, caravan, now, players)
         if caravan.escort ~= nil and A.Interact ~= nil and type(A.Interact.escortReward) == "function" then
             pcall(A.Interact.escortReward, caravan, players)
         end
-        if caravan.trips >= A.settings.tripsPerCaravan then
+        if caravan.trips >= A.settings.tripsPerCaravan and not caravan.ridersAboard and distance > D.outOfSight then
             D.release(caravan, "journey_complete")
             D.retire(caravan, "journey_complete")
             return
@@ -819,10 +801,6 @@ function D.observe(G, caravan, now, players)
             D.release(caravan, "no_next_trip")
             D.retire(caravan, "no_next_trip")
         end
-    end
-    if caravan.state == "fighting" and now - (caravan.fightingAtMs or now) > 240000 then
-        caravan.state = "stranded"
-        caravan.strandedAtMs = now
     end
 end
 
@@ -850,7 +828,9 @@ function D.knownTable()
                 local goals = {}
                 for goalIndex = caravan.goalIndex or 1, #(caravan.goals or {}) do
                     goals[#goals + 1] = { x = caravan.goals[goalIndex].x, y = caravan.goals[goalIndex].y }
-                    if #goals >= 40 then break end
+                    -- goalsFor is bounded to60 road samples plus one endpoint.
+                    -- Publishing only40 stranded long trips before their true destination.
+                    if #goals >= 61 then break end
                 end
                 known[id] = { caravanId = caravan.id, index = index, name = caravan.name, callsign = caravan.callsign, leader = caravan.leaderName,
                     factionId = caravan.factionId, kind = caravan.kind, speedKmh = caravan.speedKmh, goals = goals, trip = caravan.trip or 1,
@@ -902,10 +882,26 @@ function D.onConvoyReport(player, command, args)
     if type(args) ~= "table" then return end
     local caravan = A.Ledger.byVehicle(args.vehicleId)
     if caravan == nil then return end
+    local car = getVehicleById(args.vehicleId)
+    if A.vehicleTag(car) ~= caravan.id then return end
+    local cx, cy = A.xyz(car)
+    if cx == nil then return end
+    if player ~= nil then
+        local _, session = A.Spawn.sessionOf(args.vehicleId)
+        local px, py = A.xyz(player)
+        if not px or A.dist(px,py,cx,cy)>A.settings.releaseRadius then return end
+        if session and session.player and session.player ~= player then return end
+    end
     if command == "arrived" then
+        local goal = caravan.goals and caravan.goals[#caravan.goals]
+        if not goal or A.dist(cx,cy,goal.x,goal.y)>A.Convoy.goalReach+5 then return end
+        caravan.arrivedCars = caravan.arrivedCars or {}
+        local key = tostring(args.vehicleId)
+        if caravan.arrivedCars[key] == caravan.trip then return end
+        caravan.arrivedCars[key] = caravan.trip
         caravan.arrivals = (caravan.arrivals or 0) + 1
     elseif command == "stuck" then
-        caravan.stuckReport = { vehicleId = args.vehicleId, x = tonumber(args.x) or caravan.x, y = tonumber(args.y) or caravan.y, atMs = A.now() }
+        caravan.stuckReport = { vehicleId = args.vehicleId, x = cx, y = cy, atMs = A.now() }
         A.log(caravan.id, "car", args.vehicleId, "reports itself stuck")
     end
 end
@@ -937,6 +933,7 @@ function D.step(G, caravan, now, dt, players)
                 D.publishDirty = true
             end
         elseif now - (caravan.renderingAtMs or now) > 120000 then
+            if D.preserveOccupiedRender(caravan, now) then return end
             A.Spawn.teardown(caravan, "alc_render_timeout")
             caravan.state = "offline"
             caravan.units = 0
@@ -947,7 +944,7 @@ function D.step(G, caravan, now, dt, players)
         D.observe(G, caravan, now, players)
     elseif state == "stranded" then
         local _, distance = nearestPlayer(players, caravan.x or 0, caravan.y or 0)
-        if distance > A.settings.releaseRadius or now - (caravan.strandedAtMs or now) > 1800000 then
+        if not D.ridersAboard(caravan) and (distance > A.settings.releaseRadius or now - (caravan.strandedAtMs or now) > 1800000) then
             A.Spawn.teardownActors(caravan.actorUids, "alc_stranded")
             caravan.actorUids = {}
             caravan.vehicleIds = {}
@@ -1018,7 +1015,7 @@ end
 function D.scavengingTick(caravan, now, players)
     if not A.settings.scavengingEnabled or caravan.state ~= "rendered" or caravan.halted then return end
     if now < (caravan.scavengeNextAtMs or 0) then return end
-    caravan.scavengeNextAtMs = now + A.settings.scavengingEveryMs or 300000
+    caravan.scavengeNextAtMs = now + (A.settings.scavengingEveryMs or 300000)
     if A.rand(100) >= 30 then return end -- 30% chance
     local lootTables = {
         { "Base.CannedCornedBeef", "Base.CannedChili", "Base.TinnedBeans", "Base.Cigarettes" },
@@ -1062,16 +1059,14 @@ function D.breakdownTick(caravan, now, players)
     local vehicleId = caravan.vehicleIds[A.rand(#caravan.vehicleIds) + 1]
     local car = getVehicleById(vehicleId)
     if car == nil or A.vehicleHasPlayer(car) then return end
-    -- Damage the engine
-    pcall(function()
-        local engine = car:getPartById("Engine")
-        if engine then engine:setCondition(0) end
-    end)
+    -- A roadside inspection is temporary; never fabricate a destroyed engine.
+    -- Real engine/fuel failures are handled by carsTick.
+    caravan.maintenanceVehicleId = vehicleId
     A.metrics.breakdowns = A.metrics.breakdowns + 1
     A.log(caravan.id, "breakdown on car", vehicleId)
     local shell = D.driverShell(caravan)
     if shell ~= nil then A.Lines.say(shell, "breakdown", { uid = caravan.actorUids[1], cooldownMs = 60000 }) end
-    D.halt(caravan, 300, "breakdown")
+    D.halt(caravan, 45, "roadside_inspection")
     D.publishDirty = true
 end
 
@@ -1088,7 +1083,7 @@ function D.refuelTick(caravan, now, players)
                 local tank = car:getPartById("GasTank")
                 if tank then fuel = tank:getContainerContentAmount() end
             end)
-            if fuel <= 0.25 then
+            if fuel <= 0.3 then
                 -- Find nearby gas station
                 local G = D.graph()
                 if G == nil then return end
@@ -1104,7 +1099,7 @@ function D.refuelTick(caravan, now, players)
                             if tank then tank:setContainerContentAmount(tank:getContainerCapacity()) end
                         end)
                         A.metrics.refuels = A.metrics.refuels + 1
-                        A.log(caravan.id, "refueled at gas station", vehicleId)
+                        A.log(caravan.id, "refueled at gas station", id)
                         local shell = D.driverShell(caravan)
                         if shell ~= nil then A.Lines.say(shell, "refueled", { uid = caravan.actorUids[1], vars = {}, cooldownMs = 60000 }) end
                         D.publishDirty = true
@@ -1123,38 +1118,39 @@ function D.mergeTick(now, players)
     local list = A.Ledger.list()
     for i = 1, #list do
         local a = list[i]
-        if a.state == "rendered" and not a.halted and a.factionId ~= nil then
-            for j = i + 1, #list do
+        if a.state == "rendered" and not a.halted and not a.sos and not a.escort and not D.ridersAboard(a) then
+            for j = i+1, #list do
                 local b = list[j]
-                if b.state == "rendered" and not b.halted and b.factionId == a.factionId then
-                    local _, dist = nearestPlayer({{x=a.x, y=a.y}}, b.x or 0, b.y or 0)
-                    if dist <= 80 then -- close enough to merge
-                        -- Move b's crew and vehicles into a
-                        for _, uid in ipairs(b.actorUids or {}) do a.actorUids[#a.actorUids + 1] = uid end
-                        for _, vid in ipairs(b.vehicleIds or {}) do a.vehicleIds[#a.vehicleIds + 1] = vid end
-                        -- Combine stock
-                        for _, rowB in ipairs(b.stock or {}) do
-                            local found = false
-                            for _, rowA in ipairs(a.stock or {}) do
-                                if rowA.item == rowB.item then
-                                    rowA.count = rowA.count + rowB.count
-                                    found = true
-                                    break
-                                end
-                            end
-                            if not found and #a.stock < A.Trade.maxStock then
-                                a.stock[#a.stock + 1] = rowB
-                            end
-                        end
-                        A.metrics.merges = A.metrics.merges + 1
-                        A.log("MERGED", b.id, "into", a.id)
-                        local shell = D.driverShell(a)
-                        if shell ~= nil then A.Lines.say(shell, "merged", { uid = a.actorUids[1] }) end
-                        D.release(b, "merged")
-                        D.retire(b, "merged")
-                        D.publishDirty = true
-                        break
+                if b.state == "rendered" and not b.halted and b.factionId == a.factionId
+                    and not b.sos and not b.escort and not D.ridersAboard(b)
+                    and not a.ambush and not b.ambush
+                    and A.isEmpty(a.recrew) and A.isEmpty(b.recrew)
+                    and #(a.vehicleIds or {})+#(b.vehicleIds or {}) <= A.settings.maxVehicles
+                    and A.dist(a.x,a.y,b.x,b.y)<=80 then
+                    for _, uid in ipairs(b.actorUids or {}) do a.actorUids[#a.actorUids+1]=uid end
+                    for _, profile in ipairs(b.crew or {}) do a.crew[#a.crew+1]=profile end
+                    for _, script in ipairs(b.vehicles or {}) do a.vehicles[#a.vehicles+1]=script end
+                    for _, vid in ipairs(b.vehicleIds or {}) do
+                        a.vehicleIds[#a.vehicleIds+1]=vid
+                        local car=getVehicleById(vid)
+                        if car then A.tagVehicle(car,a.id,#a.vehicleIds) end
                     end
+                    for _, rowB in ipairs(b.stock or {}) do
+                        local found=false
+                        for _, rowA in ipairs(a.stock or {}) do
+                            if rowA.item==rowB.item then rowA.count=rowA.count+rowB.count found=true break end
+                        end
+                        if not found and #a.stock<A.Trade.maxStock then a.stock[#a.stock+1]=rowB end
+                    end
+                    -- Detach transfer ownership BEFORE retiring the donor: release
+                    -- used to remove all the cars and NPCs just moved into a.
+                    b.actorUids,b.vehicleIds,b.abandoned={},{},{}
+                    D.retire(b,"merged")
+                    -- Receiver's already-arrived cars retain their per-trip
+                    -- reports; donor membership is new on each driving client.
+                    A.metrics.merges=A.metrics.merges+1
+                    D.publishDirty=true
+                    return
                 end
             end
         end
@@ -1185,6 +1181,7 @@ function D.weatherTick(now, players)
         if caravan.state == "rendered" and not caravan.halted then
             caravan.weatherMultiplier = multiplier
             local baseSpeed = tonumber(caravan.baseSpeedKmh) or caravan.speedKmh
+            caravan.baseSpeedKmh = baseSpeed
             caravan.speedKmh = math.max(10, math.floor(baseSpeed * multiplier))
         end
     end
@@ -1268,7 +1265,7 @@ function D.livingWorldTick(now, players)
                             if p then pcall(function() stance = relations.playerStance(actor, p) end) end
                         end
                     end
-                    if stance == "friendly" and caravan.halted == false and A.rand(100) < 20 then
+                    if stance == "friendly" and not caravan.halted and A.rand(100) < 20 then
                         D.halt(caravan, 120, "safehouse_visit")
                         A.log(caravan.id, "visiting safehouse of", owner)
                         D.publishDirty = true
@@ -1286,15 +1283,11 @@ function D.tick()
     D.nextTickMs = now + D.intervalMs
     local dt = D.lastTickMs and math.min(10, (now - D.lastTickMs) / 1000) or 0
     D.lastTickMs = now
-    if not A.settings.enabled then
-        for _, caravan in ipairs(A.Ledger.list()) do A.SOS.tick(caravan, now, D.playerRows()) end
-        return
-    end
     local G = D.graph()
     if G == nil then return end
     local players = D.playerRows()
     local store = A.Ledger.open()
-    if A.Ledger.count() < A.settings.maxCaravans and now >= (tonumber(store.nextFoundAtMs) or 0) then
+    if A.settings.enabled and A.Ledger.count() < A.settings.maxCaravans and now >= (tonumber(store.nextFoundAtMs) or 0) then
         local ok, result = D.found(now, players)
         local base = A.settings.foundIntervalMinutes * 60000
         store.nextFoundAtMs = now + (ok and (base * (0.7 + A.randFloat() * 0.6)) or 30000)
@@ -1312,7 +1305,7 @@ function D.tick()
             pcall(D.refuelTick, caravan, now, players)
         end
     end
-    pcall(D.eventCaravanTick, now, players)
+    if A.settings.enabled then pcall(D.eventCaravanTick, now, players) end
     pcall(D.mergeTick, now, players)
     pcall(D.weatherTick, now, players)
     pcall(D.distressTick, now, players)

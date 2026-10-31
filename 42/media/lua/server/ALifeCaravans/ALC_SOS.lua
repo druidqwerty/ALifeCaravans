@@ -19,11 +19,21 @@ function S.notice(player, key, vars)
 end
 
 function S.finish(caravan, success, reason, player)
-    if not S.active(caravan) then return false end
+    if not A.authority() or not S.active(caravan) then return false end
     local incident = caravan.sos
+    if success and incident.owner == nil then return false end
     local store = A.Ledger.open()
     store.sosReceipts = store.sosReceipts or {}
-    if store.sosReceipts[incident.id] ~= nil then return false end
+    local receipt = store.sosReceipts[incident.id]
+    if receipt ~= nil then
+        -- A restored nonterminal snapshot must converge to its terminal receipt,
+        -- not remain an active contract and never apply its reward a second time.
+        incident.state, incident.reason, incident.finishedMs = receipt.state, receipt.reason, receipt.atMs
+        incident.paid, incident.sample = (tonumber(receipt.reward) or 0) > 0, nil
+        A.Ledger.touch()
+        if A.Director then A.Director.publishDirty = true end
+        return false
+    end
     incident.state, incident.reason, incident.finishedMs = success and "done" or "failed", reason, A.now()
     incident.paid = success == true
     incident.sample = nil
@@ -33,7 +43,8 @@ function S.finish(caravan, success, reason, player)
     local count, oldestId, oldestMs = 0, nil, nil
     for id, receipt in pairs(store.sosReceipts) do
         count = count + 1
-        if id ~= incident.id and (oldestMs == nil or receipt.atMs < oldestMs) then oldestId, oldestMs = id, receipt.atMs end
+        local atMs = tonumber(receipt.atMs) or 0
+        if id ~= incident.id and (oldestMs == nil or atMs < oldestMs) then oldestId, oldestMs = id, atMs end
     end
     if count > 128 and oldestId ~= nil then store.sosReceipts[oldestId] = nil end
     if success then A.Ledger.addFavor(incident.owner, caravan.factionId, S.reward) else A.Ledger.touch() end
@@ -44,6 +55,7 @@ function S.finish(caravan, success, reason, player)
 end
 
 function S.start(caravan, now)
+    if caravan == nil then return false end
     local ambush = caravan.ambush
     if not A.authority() or not A.settings.enabled or not A.settings.sosContracts then return false end
     if caravan.state ~= "rendered" or caravan.hostile or caravan.kind == "raid" then return false end

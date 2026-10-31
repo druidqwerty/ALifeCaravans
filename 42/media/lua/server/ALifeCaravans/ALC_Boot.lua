@@ -13,32 +13,36 @@ require "ALifeCaravans/ALC_Ledger"
 require "ALifeCaravans/ALC_Spawn"
 require "ALifeCaravans/ALC_Director"
 require "ALifeCaravans/ALC_Interact"
+require "ALifeCaravans/ALC_Recovery"
 
 local A = ALifeCaravans
-local B = { installed = false, tries = 0, settingsAtMs = 0, minute = 0, lastReport = nil }
+local B = { installed = false, tries = 0, settingsAtMs = 0, minute = 0, lastReport = nil, retryAtMs = 0 }
 A.Boot = B
 
 function B.install()
     if B.installed then return true end
+    B.tries = B.tries + 1
     local p = ProjectALife
     if type(p) ~= "table" or p.DrivingDemo == nil or p.VehicleArrivals == nil or p.Speech == nil then
-        B.tries = B.tries + 1
         if B.tries == 1 then A.log("Project A-Life not loaded yet, waiting") end
         return false
     end
-    B.installed = true
     A.refreshSettings()
-    local ok, err = pcall(function()
+    local ok, result = pcall(function()
         if A.authority() then
-            A.Spawn.install()
+            if not A.Spawn.install() then return false end
             A.Interact.install()
+            if not A.Interact.installed then return false end
             A.Ledger.open()
         end
+        return true
     end)
     if not ok then
-        A.fail("install", err)
-        return true
+        if B.lastError ~= tostring(result) then A.fail("install", result) B.lastError = tostring(result) end
+        return false
     end
+    if not result then return false end
+    B.installed = true
     A.log("v" .. A.VERSION .. " installed (" .. A.side() .. ")" .. (A.settings.enabled and "" or ", disabled in sandbox"))
     return true
 end
@@ -51,6 +55,9 @@ function B.tick()
         pcall(A.refreshSettings)
     end
     if A.authority() then
+        local recovered, recoverErr = pcall(A.Recovery.tick, now)
+        if not recovered then A.fail("reload recovery", recoverErr) return end
+        if recoverErr == false then return end
         local ok, err = pcall(A.Director.tick)
         if not ok then A.fail("director", err) end
     end
@@ -100,7 +107,10 @@ if not A.bootRegistered then
     add("OnServerStarted", function() pcall(B.install) end)
     local retry
     retry = function()
-        if not B.installed and B.tries <= 900 then pcall(B.install) end
+        if not B.installed and B.tries <= 900 and A.now() >= B.retryAtMs then
+            B.retryAtMs = A.now() + 1000
+            pcall(B.install)
+        end
         if B.installed or B.tries > 900 then remove("OnTick", retry) end
     end
     add("OnTick", retry)

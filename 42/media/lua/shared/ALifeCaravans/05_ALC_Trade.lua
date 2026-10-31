@@ -102,7 +102,11 @@ end
 
 local function read(object, method)
     if object == nil then return nil end
-    local ok, value = pcall(function() return object[method](object) end)
+    -- Java item subclasses do not share every getter. Kahlua logs a missing
+    -- method exception even when pcall catches it, once per inventory item.
+    local getter = object[method]
+    if type(getter) ~= "function" then return nil end
+    local ok, value = pcall(getter, object)
     if ok then return value end
     return nil
 end
@@ -168,23 +172,45 @@ end
 -- Quote a deal: take = { [stockIndex] = count }, give = { { type = ..., count = n }, ... }.
 -- Returns { ok, reason, cost, credit, balance, takeRows, giveRows }.
 function T.quote(stock, kind, favor, take, give)
+    if type(stock) ~= "table" or (take ~= nil and type(take) ~= "table") or (give ~= nil and type(give) ~= "table") then
+        return { ok = false, reason = "bad_request" }
+    end
     local out = { cost = 0, credit = 0, takeRows = {}, giveRows = {} }
-    for index, count in pairs(take or {}) do
-        local row = stock[tonumber(index) or 0]
-        count = math.floor(tonumber(count) or 0)
-        if row == nil or count <= 0 then return { ok = false, reason = "bad_take" } end
+    local taken, offered, entries = {}, {}, 0
+    for rawIndex, rawCount in pairs(take or {}) do
+        entries = entries + 1
+        local index, count = tonumber(rawIndex), tonumber(rawCount)
+        if entries > T.maxStock or index == nil or index ~= index or index % 1 ~= 0 or count == nil or count ~= count
+            or count % 1 ~= 0 or count <= 0 or count > 999 or taken[index] then return { ok = false, reason = "bad_take" } end
+        taken[index] = true
+        local row = stock[index]
+        if row == nil then return { ok = false, reason = "bad_take" } end
         if count > row.count then return { ok = false, reason = "out_of_stock" } end
         local price = T.sellPrice(row, kind, favor)
         out.cost = out.cost + price * count
         out.takeRows[#out.takeRows + 1] = { index = tonumber(index), item = row.item, name = row.name, count = count, price = price }
     end
-    for _, offer in ipairs(give or {}) do
-        local count = math.floor(tonumber(offer.count) or 0)
-        if type(offer.type) ~= "string" or count <= 0 or count > 999 then return { ok = false, reason = "bad_give" } end
+    entries = 0
+    for index, offer in pairs(give or {}) do
+        entries = entries + 1
+        if entries > 64 or type(index) ~= "number" or index % 1 ~= 0 or index < 1 or type(offer) ~= "table" then
+            return { ok = false, reason = "bad_give" }
+        end
+        local count = tonumber(offer.count)
+        if type(offer.type) ~= "string" or #offer.type > 128 or count == nil or count ~= count or count % 1 ~= 0
+            or count <= 0 or count > 999 or not T.exists(offer.type) then return { ok = false, reason = "bad_give" } end
         local price = T.buyPrice(offer.type, kind)
         if price <= 0 then return { ok = false, reason = "unwanted:" .. offer.type } end
         out.credit = out.credit + price * count
-        out.giveRows[#out.giveRows + 1] = { type = offer.type, name = T.name(offer.type), count = count, price = price }
+        local previous = offered[offer.type]
+        if previous ~= nil then
+            previous.count = previous.count + count
+            if previous.count > 999 then return { ok = false, reason = "bad_give" } end
+        else
+            local row = { type = offer.type, name = T.name(offer.type), count = count, price = price }
+            offered[offer.type] = row
+            out.giveRows[#out.giveRows + 1] = row
+        end
     end
     out.balance = out.credit - out.cost
     if #out.takeRows == 0 and #out.giveRows == 0 then return { ok = false, reason = "empty" } end
@@ -218,6 +244,96 @@ function T.commit(stock, quote)
     for index = #stock, 1, -1 do
         if stock[index].count <= 0 then table.remove(stock, index) end
     end
+end
+
+-- The same eligible items populate the UI and satisfy server payment. Never
+-- sell equipped/favourite items or a bag with its contents still inside it.
+function T.inventoryItems(player)
+    local result, visited = {}, {}
+    local function scan(container, depth)
+        if container == nil or visited[container] or depth > 16 then return end
+        visited[container] = true
+        local items = container:getItems()
+        for index = 0, items:size() - 1 do
+            local item = items:get(index)
+            local child = read(item, "getInventory")
+            local favorite = read(item, "isFavorite") == true
+            local equipped = false
+            if type(player.isEquipped) == "function" then equipped = player:isEquipped(item) == true end
+            local empty = child == nil or child:getItems():size() == 0
+            local loaded = (tonumber(read(item, "getCurrentAmmoCount")) or 0) > 0 or read(item, "isRoundChambered") == true
+            if not favorite and not equipped and empty and not loaded then
+                result[#result + 1] = { item = item, container = container, type = item:getFullType() }
+            end
+            if not favorite then scan(child, depth + 1) end
+        end
+    end
+    local ok = pcall(function() scan(player:getInventory(), 0) end)
+    if not ok then return {} end
+    return result
+end
+
+-- Vanilla B42 server ClientCommands uses these replication calls immediately
+-- after inventory mutations. Clients never create their own purchased goods.
+local function replicate(method, container, item)
+    if A.side() ~= "server" then return end
+    local fn = sendRemoveItemFromContainer
+    if method == "add" then fn = sendAddItemToContainer end
+    if type(fn) == "function" then
+        local ok, err = pcall(fn, container, item)
+        if not ok then A.fail("inventory " .. method, err) end
+    end
+end
+
+-- Select actual item objects before changing anything. If output creation or
+-- payment removal fails, restore the same objects (condition/content intact).
+function T.exchange(player, quote)
+    if not A.authority() or player == nil or type(quote) ~= "table" then return false, "bad_request" end
+    local inventory = player:getInventory()
+    local available, chosen, used = T.inventoryItems(player), {}, {}
+    for _, row in ipairs(quote.giveRows or {}) do
+        local remaining = row.count
+        for _, candidate in ipairs(available) do
+            if remaining > 0 and not used[candidate.item] and candidate.type == row.type then
+                chosen[#chosen + 1] = candidate
+                used[candidate.item] = true
+                remaining = remaining - 1
+            end
+        end
+        if remaining > 0 then return false, "short" end
+    end
+    local added, removed, attempted = {}, {}, {}
+    local function contains(container, item)
+        local items = container:getItems()
+        for index = 0, items:size() - 1 do if items:get(index) == item then return true end end
+        return false
+    end
+    local ok, err = pcall(function()
+        for _, row in ipairs(quote.takeRows or {}) do
+            for _ = 1, row.count do
+                local item = inventory:AddItem(row.item)
+                if item == nil then error("unavailable_item") end
+                added[#added + 1] = item
+            end
+        end
+        for _, candidate in ipairs(chosen) do
+            attempted[#attempted + 1] = candidate
+            candidate.container:Remove(candidate.item)
+            if contains(candidate.container, candidate.item) then error("payment_failed") end
+            removed[#removed + 1] = candidate
+        end
+    end)
+    if not ok then
+        for _, item in ipairs(added) do pcall(function() inventory:Remove(item) end) end
+        for _, candidate in ipairs(attempted) do
+            pcall(function() if not contains(candidate.container, candidate.item) then candidate.container:AddItem(candidate.item) end end)
+        end
+        A.fail("inventory exchange rolled back", err)
+        return false, "inventory_failed"
+    end
+    for _, candidate in ipairs(removed) do replicate("remove", candidate.container, candidate.item) end
+    for _, item in ipairs(added) do replicate("add", inventory, item) end
+    return true
 end
 
 return T
