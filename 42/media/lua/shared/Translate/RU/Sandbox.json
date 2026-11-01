@@ -61,6 +61,6 @@
     "Sandbox_ALifeCaravans_WeatherEffects": "Влияние погоды и ночи на скорость",
     "Sandbox_ALifeCaravans_NightTravelPenalty": "Ночная скорость, проценты",
     "Sandbox_ALifeCaravans_DistressCalls": "Радиосигналы бедствия",
-    "Sandbox_ALifeCaravans_LivingWorld": "Остановки у орд и дружественных баз",
+    "Sandbox_ALifeCaravans_LivingWorld": "Реакции на зомби рядом и посещение дружественных баз",
     "Sandbox_ALifeCaravans_BreakdownChance_tooltip": "Вероятность при проверке каждые две минуты: остановка на 45 секунд для техосмотра. Двигатель не повреждается. 0 — отключить."
 }

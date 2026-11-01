@@ -40,6 +40,17 @@ local function start(player, now)
     if not result or result:sub(1,5) ~= "PASS " then return finish(false,"prior SOS did not pass: " .. tostring(result)) end
     T.c = sos.caravan
     if not T.c then return finish(false,"SOS fixture caravan missing") end
+    -- This fixture tests an ORDINARY timed stop. Emergency departure is tested
+    -- separately with live attackers; a nearby zombie correctly cancels a halt.
+    local car=lead()
+    if car then
+        local zombies=getCell():getZombieList()
+        for i=zombies:size()-1,0,-1 do
+            local z=zombies:get(i)
+            if not z:isDead() and not z:getModData().ProjectALifeOwned
+                and ALifeCaravans.dist(z:getX(),z:getY(),car:getX(),car:getY())<35 then z:Kill(nil) end
+        end
+    end
     if ALRLive.auditGoal then
         T.c.goals={ALRLive.auditGoal}; T.c.goalIndex=1; T.c.arrivals=0
         T.c.trip=(T.c.trip or 0)+1

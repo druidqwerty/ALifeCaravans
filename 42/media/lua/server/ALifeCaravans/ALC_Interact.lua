@@ -36,10 +36,11 @@ local function P() return ProjectALife end
 
 function I.leaderActor(caravan)
     local registry = P() and P().ActorRegistry
-    local uid = caravan.actorUids and caravan.actorUids[1] or nil
-    if registry == nil or uid == nil then return nil end
-    local ok, actor = pcall(registry.read, uid)
-    if ok then return actor end
+    if registry == nil then return nil end
+    for _, uid in ipairs(caravan.actorUids or {}) do
+        local ok, actor = pcall(registry.read, uid)
+        if ok and actor and actor.lifecycle ~= "dead" then return actor end
+    end
     return nil
 end
 
@@ -72,7 +73,9 @@ function I.caravanOf(args)
     if type(args) ~= "table" then return nil end
     local id = tonumber(args.vehicleId)
     if id == nil then return nil end
-    return A.Ledger.byVehicle(id), id
+    local c = A.Ledger.byVehicle(id)
+    if not A.Lifecycle.visible(c) then return nil end
+    return c, id
 end
 
 function I.within(player, caravan)
@@ -449,17 +452,22 @@ function I.command(player, command, args)
             return
         end
         -- Show physical cargo in trunks
-        local cargo = {}
+        local cargo, byType = {}, {}
         for _, id in ipairs(caravan.vehicleIds or {}) do
             local car = getVehicleById(id)
-            if car then
+            if car and A.vehicleTag(car) == caravan.id then
                 local trunk = car:getPartById("TruckBed") or car:getPartById("Trunk")
                 if trunk then
                     local container = trunk:getItemContainer()
                     if container then
                         for i = 0, container:getItems():size() - 1 do
                             local item = container:getItems():get(i)
-                            cargo[#cargo + 1] = { name = item:getDisplayName(), type = item:getFullType() }
+                            local fullType = item:getFullType()
+                            if byType[fullType] then byType[fullType].count=byType[fullType].count+1
+                            elseif #cargo < 256 then
+                                local row={name=item:getDisplayName(),type=fullType,count=1}
+                                cargo[#cargo+1],byType[fullType]=row,row
+                            end
                         end
                     end
                 end
@@ -470,7 +478,13 @@ function I.command(player, command, args)
     elseif command == "form_caravan" then
         I.say(caravan, "form_refuse_not_enough", player, vars)
     elseif command == "caravan_status" then
+        local alive=0
+        for _,uid in ipairs(caravan.actorUids or {}) do
+            local actor=P().ActorRegistry.read(uid)
+            if actor and actor.lifecycle~="dead" then alive=alive+1 end
+        end
         local status = {
+            vehicleId = vehicleId,
             caravanId = caravan.id,
             name = caravan.name,
             callsign = caravan.callsign,
@@ -479,7 +493,7 @@ function I.command(player, command, args)
             leader = caravan.leaderName,
             dest = caravan.destName,
             speed = caravan.speedKmh,
-            crew = #(caravan.actorUids or {}),
+            crew = alive,
             vehicles = #(caravan.vehicleIds or {}),
             trip = caravan.trip or 0,
             state = caravan.state,

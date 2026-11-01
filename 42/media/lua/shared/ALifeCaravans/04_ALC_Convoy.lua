@@ -43,11 +43,9 @@ function C.setKnown(entries)
     local fresh = {}
     for id, entry in pairs(entries or {}) do
         local previous = C.known[id]
-        if previous ~= nil and previous.caravanId == entry.caravanId then
-            if previous.trip == entry.trip then
-                entry.goalIndex = math.max(entry.goalIndex or 1, previous.goalIndex or 1)
-                entry.arrivedSent = previous.arrivedSent
-            end
+        if previous ~= nil and previous.caravanId == entry.caravanId and previous.trip == entry.trip then
+            entry.goalIndex = math.max(entry.goalIndex or 1, previous.goalIndex or 1)
+            entry.arrivedSent = previous.arrivedSent
             entry.parkedAt = previous.parkedAt
             entry.blockedSaidAt = previous.blockedSaidAt
             entry.passedAt = previous.passedAt
@@ -56,10 +54,15 @@ function C.setKnown(entries)
             entry.regroupSaidAt = previous.regroupSaidAt
             entry.discardRoute = previous.discardRoute
             entry.restartCount = previous.restartCount
+        elseif previous ~= nil then
+            -- A new destination must not restart the leftover endpoint of the
+            -- previous trip (A-Life rejects a waypoint under the parked car).
+            entry.discardRoute = true
         end
         fresh[id] = entry
     end
     C.known = fresh
+    if A.Client and A.Client.invalidateTrade then A.Client.invalidateTrade(fresh) end
     if A.Physics.sweepSP then A.Physics.sweepSP() end
 end
 
@@ -158,9 +161,28 @@ end
 function C.start(id, points, speedKmh)
     local client = C.client()
     if client == nil or type(client.startDrive) ~= "function" then return false, "no driving client" end
-    local ok, err = pcall(client.startDrive, id, points, speedKmh)
-    if not ok then return false, err end
-    return true
+    local ok, result = pcall(client.startDrive, id, points, speedKmh)
+    if not ok then return false, result end
+    if type(result)=="boolean" then return result end
+    -- Upstream returns nil both on rejection and success: inspect its queued
+    -- request/state, not merely the absence of a Lua exception.
+    local s=client.sessions and client.sessions[id]
+    if client.departures and client.departures[id] then return true end
+    if s and (s.drivePending or s.phase=="readywait" or s.phase=="driving") then return true end
+    return false, s and s.status or "departure not queued"
+end
+
+function C.remainingRoute(s)
+    local x,y=A.xyz(s.vehicle)
+    if not x then return {} end
+    local points={}
+    for _,point in ipairs(s.route or {}) do
+        if A.dist(x,y,point.x,point.y)>=1.5 then
+            points[#points+1]={x=point.x,y=point.y}
+            x,y=point.x,point.y
+        end
+    end
+    return points
 end
 
 function C.report(command, args)
@@ -335,19 +357,21 @@ function C.tickOne(group, position, now)
         local owner = C.owner()
         if owner ~= nil and owner.departures ~= nil and owner.departures[id] ~= nil then return end
         -- followers leave a little after the car ahead
-        local delay = C.restartDelayMs + (position - 1) * 1500
+        local delay = (entry.threatState == "escape" and 1000 or C.restartDelayMs) + (position - 1) * 1500
         if now - entry.parkedAt < delay then return end
         if entry.discardRoute then
             entry.discardRoute = nil
             s.route = {}
         end
         if s.route ~= nil and #s.route > 0 then
-            entry.parkedAt = now
-            local copy = {}
-            for _, p in ipairs(s.route) do copy[#copy + 1] = { x = p.x, y = p.y } end
-            entry.restartCount = (entry.restartCount or 0) + 1
-            C.start(id, copy, speedFor(entry))
-            return
+            local copy = C.remainingRoute(s)
+            if #copy>0 then
+                entry.parkedAt = now
+                entry.restartCount = (entry.restartCount or 0) + 1
+                C.start(id, copy, speedFor(entry))
+                return
+            end
+            s.route = {} -- All queued points already reached; scout a real leg.
         end
         if now >= (entry.nextScoutAt or 0) then
             entry.nextScoutAt = now + 2000

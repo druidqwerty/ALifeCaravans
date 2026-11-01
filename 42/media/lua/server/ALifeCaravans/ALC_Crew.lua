@@ -78,6 +78,8 @@ function R.watch(c, now)
             R.queue(c,id,"dead_suspended_member",now)
         elseif s or sleeping then
             c.crewMissing[tostring(id)] = nil
+        elseif A.Spawn.canRestoreRiders(c,id) then
+            R.queue(c,id,"passenger_crew_recovery",now)
         else
             local key = tostring(id)
             c.crewMissing[key] = c.crewMissing[key] or now

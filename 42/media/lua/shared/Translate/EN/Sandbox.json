@@ -61,6 +61,6 @@
     "Sandbox_ALifeCaravans_WeatherEffects": "Weather and night affect cruising speed",
     "Sandbox_ALifeCaravans_NightTravelPenalty": "Night speed, percent",
     "Sandbox_ALifeCaravans_DistressCalls": "Radio distress calls",
-    "Sandbox_ALifeCaravans_LivingWorld": "Horde and friendly-base stops",
+    "Sandbox_ALifeCaravans_LivingWorld": "Local zombie reactions and friendly-base visits",
     "Sandbox_ALifeCaravans_BreakdownChance_tooltip": "Chance at each two-minute check for a 45-second roadside inspection. Never destroys the engine. Set 0 to disable."
 }

@@ -1,0 +1,116 @@
+Scenario-only evidence; isolated cold MP051825; no production hotpatches.
+
+
+## SOS
+PASS real convoy escape 122.46 tiles/30711ms; favor +3 once; duplicate denied
+scope=controlled real one-client MP ambush/accept/boarding/driving/reward; attacker clearance scripted
+1793499630061,10587.979,10266.122,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793499632265,10587.979,10266.122,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793499634466,10587.979,10266.122,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793499636763,10587.979,10266.122,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793499638964,10587.979,10266.122,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793499641163,10587.979,10266.122,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793499643363,10587.979,10266.122,state=cover,ambush=boarding,driver=false,distance=0.00,coveredMs=0
+1793499645752,10587.979,10266.123,state=cover,ambush=none,driver=false,distance=0.00,coveredMs=0
+1793499647952,10587.979,10266.122,state=cover,ambush=none,driver=false,distance=0.00,coveredMs=0
+1793499650153,10587.979,10266.123,state=cover,ambush=none,driver=true,distance=0.00,coveredMs=0
+1793499652363,10587.979,10266.124,state=escape,ambush=none,driver=true,distance=0.00,coveredMs=0
+1793499654664,10587.869,10266.797,state=escape,ambush=none,driver=true,distance=0.68,coveredMs=2101
+1793499656866,10587.524,10269.053,state=escape,ambush=none,driver=true,distance=2.72,coveredMs=4196
+1793499659159,10587.070,10273.093,state=escape,ambush=none,driver=true,distance=6.10,coveredMs=6201
+1793499661361,10586.875,10279.085,state=escape,ambush=none,driver=true,distance=11.25,coveredMs=8204
+1793499663561,10587.193,10286.294,state=escape,ambush=none,driver=true,distance=18.01,coveredMs=10294
+1793499665963,10587.660,10296.494,state=escape,ambush=none,driver=true,distance=26.37,coveredMs=12397
+1793499668163,10587.720,10307.858,state=escape,ambush=none,driver=true,distance=35.47,coveredMs=14403
+1793499670562,10587.411,10322.108,state=escape,ambush=none,driver=true,distance=46.91,coveredMs=16499
+1793499672866,10587.340,10337.519,state=escape,ambush=none,driver=true,distance=59.95,coveredMs=18590
+1793499675167,10587.521,10355.855,state=escape,ambush=none,driver=true,distance=89.81,coveredMs=22603
+1793499677565,10587.523,10372.435,state=escape,ambush=none,driver=true,distance=104.34,coveredMs=24693
+1793499679854,10587.491,10387.686,state=escape,ambush=none,driver=true,distance=118.10,coveredMs=26699
+1793499682063,10587.480,10399.776,state=escape,ambush=none,driver=true,distance=118.10,coveredMs=26699
+1793499684355,10587.481,10400.206,state=escape,ambush=none,driver=true,distance=118.10,coveredMs=26699
+1793499686551,10587.496,10400.919,state=escape,ambush=none,driver=true,distance=118.10,coveredMs=26699
+1793499688760,10587.997,10403.873,state=escape,ambush=none,driver=true,distance=120.13,coveredMs=28710
+
+
+## Caravan audit
+PASS hail/trade/UI/timed stop; actual on-foot crew reboarded and drove 10.13 tiles
+scope=production hail/trade; inventory/UI; timed halt; observed spontaneous exit/reboard/depart
+1793499747357,hail,10594.13,10437.71,driver=true,session=driving,halted=nil
+1793499749464,trade,10594.78,10437.54,driver=true,session=seated,halted=true
+1793499751564,halt,10594.78,10437.54,driver=true,session=seated,halted=true
+1793499753658,halt,10594.77,10437.54,driver=true,session=seated,halted=true
+1793499755751,halt,10594.77,10437.54,driver=true,session=seated,halted=true
+1793499757855,halt,10594.76,10437.54,driver=true,session=driving,halted=nil
+1793499759958,depart,10595.20,10437.40,driver=true,session=driving,halted=nil
+1793499762051,depart,10596.71,10436.68,driver=true,session=driving,halted=nil
+1793499764164,depart,10598.03,10435.64,driver=true,session=driving,halted=nil
+1793499766252,depart,10599.00,10434.41,driver=true,session=driving,halted=nil
+1793499768359,depart,10599.58,10433.22,driver=true,session=driving,halted=nil
+1793499770454,depart,10599.97,10431.37,driver=true,session=driving,halted=nil
+1793499772555,depart,10599.94,10429.70,driver=true,session=driving,halted=nil
+1793499774657,reboard,10599.69,10428.59,driver=false,session=parking,halted=nil
+1793499776755,reboard,10599.69,10428.59,driver=false,session=nil,halted=nil
+1793499778851,reboard,10599.69,10428.59,driver=false,session=nil,halted=nil
+1793499780954,reboard,10599.69,10428.59,driver=false,session=nil,halted=nil
+1793499783055,reboard,10599.69,10428.59,driver=false,session=approach,halted=nil
+1793499785155,reboard,10599.69,10428.59,driver=true,session=approach,halted=nil
+1793499787260,reboard,10599.69,10428.59,driver=true,session=approach,halted=nil
+1793499789365,escape,10599.69,10428.59,driver=true,session=starting,halted=nil
+1793499791455,escape,10599.66,10428.49,driver=true,session=driving,halted=nil
+1793499793563,escape,10599.77,10428.85,driver=true,session=driving,halted=nil
+1793499795662,escape,10600.24,10430.37,driver=true,session=driving,halted=nil
+1793499797760,escape,10600.78,10432.09,driver=true,session=driving,halted=nil
+1793499799853,escape,10601.07,10433.04,driver=true,session=driving,halted=nil
+1793499801963,escape,10601.09,10433.08,driver=true,session=driving,halted=nil
+1793499804056,escape,10600.92,10432.57,driver=true,session=driving,halted=nil
+1793499806162,escape,10600.34,10431.39,driver=true,session=driving,halted=nil
+1793499808266,escape,10599.38,10430.20,driver=true,session=driving,halted=nil
+1793499810355,escape,10598.08,10429.19,driver=true,session=driving,halted=nil
+1793499812461,escape,10596.73,10428.57,driver=true,session=driving,halted=nil
+1793499814552,escape,10594.97,10428.22,driver=true,session=driving,halted=nil
+1793499816655,escape,10593.24,10428.27,driver=true,session=driving,halted=nil
+1793499818756,escape,10591.71,10428.69,driver=true,session=driving,halted=nil
+1793499820867,escape,10590.49,10429.34,driver=true,session=driving,halted=nil
+
+
+## Joint caravan
+PASS two-client zombie departure, real passenger, replicated dead-crew cleanup, vanilla exit and original loot vehicle
+observer installed; waiting for ordinary audit
+STAGE partial
+PARTIAL DEATH PASS original driver survives; passenger seat freed naturally
+STAGE clients
+ready observer
+ready admin
+STAGE escape
+ESCAPE PASS distance=8.300411986271868 passengerSeat=2
+STAGE stop
+STAGE review
+review admin
+review observer
+STAGE deaths
+STAGE replication
+cleared admin
+RESULT FAIL observer: attempted index: hideAndChildren of non-table: null java.lang.RuntimeException
+cleared observer
+BOTH CLIENTS PASS markers/menus/windows cleared; actual passenger protected
+STAGE exit
+exited observer
+exited admin
+RESULT PASS two-client zombie departure, real passenger, replicated dead-crew cleanup, vanilla exit and original loot vehicle
+
+
+## Primary caravan client
+PASS replicated lifecycle, real windows, original car, normal passenger exit; primary=true
+
+
+## Observer caravan client
+PASS replicated lifecycle, real windows, original car, normal passenger exit; primary=false
+
+
+## Archived ordinary-stop isolation failure (not counted as a pass)
+FAIL timed halt expired too early
+scope=production hail/trade; inventory/UI; timed halt; observed spontaneous exit/reboard/depart
+1793499690365,hail,10588.55,10405.22,driver=true,session=driving,halted=nil
+1793499692460,trade,10588.86,10405.75,driver=true,session=seated,halted=true
+1793499694553,halt,10588.93,10405.87,driver=true,session=driving,halted=true

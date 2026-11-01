@@ -8,7 +8,7 @@ ALifeCaravans = ALifeCaravans or {}
 local A = ALifeCaravans
 
 A.MOD_ID = "ALifeCaravans"
-A.VERSION = "0.5.0"
+A.VERSION = "0.6.0"
 A.TAG = "[ALC]"
 A.MODULE = "ALifeCaravans"        -- client<->server command module name
 A.MODDATA_ID = "ALifeCaravanId"   -- vehicle ModData key (authoritative side only)

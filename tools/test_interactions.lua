@@ -198,6 +198,8 @@ win.joyList = win.sellList
 win.updateSummary = function() end
 check("gamepad empty list safe", pcall(win.onJoypadDown, win, Joypad.AButton))
 win.sellList.items = { { item = { count = 2, selected = 0, index = 1 } } }
+win.sellRows={win.sellList.items[1].item}
+win.giveRows={}
 win:onJoypadDown(Joypad.AButton)
 check("gamepad A selects quantity", win.sellList.items[1].item.selected == 1)
 win:onJoypadDirRight()
@@ -205,6 +207,30 @@ check("gamepad switches offer column", win.joyList == win.giveList)
 win.quote = { ok = true }
 win:onJoypadDown(Joypad.XButton)
 check("gamepad trade preserves player/revision", sent and sent.command == "deal" and sent.index == 1 and sent.args.revision == 4)
+-- Filtering must not silently throw away (or stop quoting) hidden basket rows.
+win.sellRows[1].name="Bandage"
+win.sellRows[2]={index=2,name="Hammer",count=3,selected=2}
+win.giveRows={{type="Base.Money",name="Money",count=2000,selected=50}}
+for _,box in ipairs({win.sellList,win.giveList}) do
+    box.clear=function(self) self.items={} end
+    box.addItem=function(self,name,row) self.items[#self.items+1]={item=row} end
+end
+win.sellSearch={getText=function() return "Hammer" end}
+win.giveSearch={getText=function() return "No matching item" end}
+win:filterLists()
+check("search filters only presentation",#win.sellList.items==1 and #win.giveList.items==0)
+local take,give=win:selection()
+check("hidden basket choices remain in authoritative offer",take[1]==1 and take[2]==2 and give[1].count==50)
+win:onJoypadDown(Joypad.XButton)
+check("filtered trade still sends the whole offer",sent.args.take[1]==1 and sent.args.give[1].count==50)
+win.sellSearch.getText=function() return "" end
+win.giveSearch.getText=win.sellSearch.getText
+win:filterLists()
+win.giveRows[1].selected=999
+win:selectRow(win.giveList,1,1)
+check("UI quantity respects server per-type transaction bound",win.giveRows[1].selected==999)
+win:selectRow(win.giveList,1,-1)
+check("quantity can be reduced without clearing whole basket",win.giveRows[1].selected==998)
 win.setVisible = function() end
 win.removeFromUIManager = function() end
 win.joyfocus = {}
@@ -224,7 +250,9 @@ end
 function menu:getNew() return self end
 function menu:addSubMenu() end
 loadedClient.fill(1, menu, {}, false)
-menu.options[2].callback()
+for _,item in ipairs(menu.options) do
+    if item.label==A.Lines.ui("hail","Flag them down") then item.callback() end
+end
 check("split-screen context belongs to its player", sent.index == 1)
 check("invalid context cannot throw", pcall(loadedClient.fill, 0, {}, {}, false))
 local oldWorldContext, tested = ISWorldObjectContextMenu, false

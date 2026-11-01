@@ -41,6 +41,29 @@ return function(check)
     check("saved passenger recovery never claims player mode", not eligible())
     owner.carModes[car.id], binding.restoredCrew = "mixed", nil
     check("saved passenger recovery requires restored binding provenance", not eligible())
+    binding.revision, binding.cleanupRevision = 7, 7
+    check("pruned passenger recovery requires confirmed owned death", not eligible())
+    ACTORS[rider.uid].lifecycle = "dead"
+    check("pruned passenger recovery rejects stale dead member still bound", not eligible())
+    local guardSpec = table.remove(binding.crew,2)
+    check("pruned surviving driver reconnects around real player passenger", eligible())
+    binding.revision = 8
+    check("pruned passenger recovery survives later upstream binding revision", eligible())
+    binding.revision = 7
+    binding.crew[1].generation = 2
+    check("pruned passenger recovery rejects changed actor generation", not eligible())
+    binding.crew[1].generation, binding.cleanupRevision = 1, 8
+    check("pruned passenger recovery rejects impossible future cleanup revision", not eligible())
+    binding.cleanupRevision = 7
+    local recovered = A.Spawn.recrew(c,car.id,nil,1)
+    check("pruned crew restart preserves player seat and advances revision", recovered
+        and car.passengers[1]==PLAYER and owner.bindings[car.id].revision==8)
+    A.Spawn.releaseCar(car.id,c.id)
+    owner.bindings[car.id] = binding
+    owner.allowRiders[car.id], owner.carModes[car.id] = true, "mixed"
+    binding.cleanupRevision, binding.revision = nil, 1
+    binding.crew[2] = guardSpec
+    ACTORS[rider.uid].lifecycle = "active"
     binding.restoredCrew, owner.sessions[car.id] = true, {vehicle=car}
     local held = owner.sessions[car.id]
     local ok = A.Spawn.recrew(c,car.id,nil,1)

@@ -18,6 +18,8 @@ require "ALifeCaravans/ALC_Ledger"
 require "ALifeCaravans/ALC_Spawn"
 require "ALifeCaravans/ALC_SOSMonitor"
 require "ALifeCaravans/ALC_Crew"
+require "ALifeCaravans/ALC_Lifecycle"
+require "ALifeCaravans/ALC_Threats"
 
 local A = ALifeCaravans
 local D = { nextTickMs = 0, intervalMs = 2000, lastTickMs = nil, renderCooldownUntilMs = 0, publishAtMs = 0,
@@ -764,6 +766,7 @@ function D.observe(G, caravan, now, players)
     caravan.ridersAboard = D.ridersAboard(caravan)
     local _, distance = nearestPlayer(players, caravan.x, caravan.y)
     if distance > A.settings.releaseRadius and not caravan.ridersAboard then D.release(caravan, "far") return end
+    A.Threats.tick(caravan, now, cars)
     if caravan.halted and caravan.haltUntilMs ~= nil and now >= caravan.haltUntilMs and not (caravan.ambush and caravan.ambush.state == "fighting") then
         D.resume(caravan)
         local shell = D.driverShell(caravan)
@@ -805,25 +808,26 @@ function D.observe(G, caravan, now, players)
 end
 
 function D.driverShell(caravan)
-    local uid = caravan.actorUids and caravan.actorUids[1] or nil
-    if uid == nil then return nil end
     local p = P()
-    if p.Talk ~= nil and type(p.Talk.shellFor) == "function" then
-        local ok, shell = pcall(p.Talk.shellFor, uid)
-        if ok and shell ~= nil then return shell, uid end
+    if not p then return nil end
+    for _, uid in ipairs(caravan.actorUids or {}) do
+        local actor = p.ActorRegistry and p.ActorRegistry.read(uid)
+        if actor and actor.lifecycle ~= "dead" then
+            local find = p.Talk and p.Talk.shellFor or p.Speech and p.Speech.findShell
+            if type(find) == "function" then
+                local ok, shell = pcall(find, uid)
+                if ok and shell and not shell:isDead() then return shell, uid end
+            end
+        end
     end
-    if p.Speech ~= nil and type(p.Speech.findShell) == "function" then
-        local ok, shell = pcall(p.Speech.findShell, uid)
-        if ok and shell ~= nil then return shell, uid end
-    end
-    return nil, uid
+    return nil
 end
 
 -- Driving-side view of every caravan car (single player: direct; multiplayer: broadcast).
 function D.knownTable()
     local known = {}
     for _, caravan in ipairs(A.Ledger.list()) do
-        if caravan.state == "rendered" or caravan.state == "rendering" then
+        if A.Lifecycle.visible(caravan) and (caravan.state == "rendered" or caravan.state == "rendering") then
             for index, id in ipairs(caravan.vehicleIds or {}) do
                 local goals = {}
                 for goalIndex = caravan.goalIndex or 1, #(caravan.goals or {}) do
@@ -834,7 +838,7 @@ function D.knownTable()
                 end
                 known[id] = { caravanId = caravan.id, index = index, name = caravan.name, callsign = caravan.callsign, leader = caravan.leaderName,
                     factionId = caravan.factionId, kind = caravan.kind, speedKmh = caravan.speedKmh, goals = goals, trip = caravan.trip or 1,
-                    halted = caravan.halted == true, dest = caravan.destName, hostile = caravan.hostile == true, riders = caravan.riders == true,
+                    halted = caravan.halted == true, threatState = caravan.threatState, dest = caravan.destName, hostile = caravan.hostile == true, riders = caravan.riders == true,
                     sosState = caravan.sos and caravan.sos.state, sosOwner = caravan.sos and caravan.sos.owner,
                     trade = caravan.stock ~= nil and #caravan.stock > 0, escort = caravan.escort ~= nil and caravan.escort.playerKey or nil }
             end
@@ -849,7 +853,7 @@ function D.markerTable()
     if not A.settings.markers then return markers end
     local G = D.graph()
     for _, caravan in ipairs(A.Ledger.list()) do
-        if caravan.x ~= nil then
+        if caravan.x ~= nil and A.Lifecycle.visible(caravan) then
             markers[#markers + 1] = { id = caravan.id, name = caravan.name, callsign = caravan.callsign, kind = caravan.kind,
                 x = math.floor(caravan.x), y = math.floor(caravan.y), heading = G and D.heading(G, caravan) or 0,
                 state = caravan.state, halted = caravan.halted == true, dest = caravan.destName, cars = #(caravan.vehicles or {}) }
@@ -907,6 +911,7 @@ function D.onConvoyReport(player, command, args)
 end
 
 function D.step(G, caravan, now, dt, players)
+    if A.Lifecycle.tick(caravan, now) then return end
     local state = caravan.state or "offline"
     if state == "offline" then
         local result = D.advance(G, caravan, dt, players)
@@ -1052,6 +1057,7 @@ end
 -- NEW FEATURE: Vehicle breakdowns
 function D.breakdownTick(caravan, now, players)
     if caravan.state ~= "rendered" or caravan.halted then return end
+    if now < (caravan.dangerUntilMs or 0) then return end
     if now < (caravan.breakdownCheckAtMs or 0) then return end
     caravan.breakdownCheckAtMs = now + 120000 -- check every 2 minutes
     if A.rand(100) >= (A.settings.breakdownChance or 10) then return end
@@ -1223,43 +1229,23 @@ function D.livingWorldTick(now, players)
     D.livingWorldCheckAtMs = now + D.livingWorldEveryMs
     for _, caravan in ipairs(A.Ledger.list()) do
         local cx, cy = caravan.x, caravan.y
-        if caravan.state == "rendered" and cx ~= nil then
-            -- Check for zombie hordes nearby
-            local hordeCount = 0
-            pcall(function()
-                local list = getCell():getZombieList()
-                for index = 0, list:size() - 1 do
-                    local zombie = list:get(index)
-                    local zx, zy = A.xyz(zombie)
-                    if zx and not zombie:isDead() and A.dist(zx, zy, cx, cy) <= 50 then
-                        local data = zombie:getModData()
-                        if not (data and data.ProjectALifeOwned == true) then hordeCount = hordeCount + 1 end
-                    end
-                end
-            end)
-            if hordeCount >= 20 and A.rand(100) < 40 then
-                -- Large horde blocks the road
-                D.halt(caravan, 180, "horde_block")
-                local shell = D.driverShell(caravan)
-                if shell ~= nil then A.Lines.say(shell, "horde_block", { uid = caravan.actorUids[1] }) end
-                A.log(caravan.id, "HORDE BLOCK", hordeCount, "zombies")
-                D.publishDirty = true
-            end
+        if caravan.state == "rendered" and cx ~= nil and now >= (caravan.dangerUntilMs or 0) then
             -- Check for player bases nearby (safehouses)
             local safehouse = nil
             pcall(function()
-                local SafeHouse = SafeHouse and SafeHouse.getSafeHouse
-                if SafeHouse then safehouse = SafeHouse(cx, cy, 0) end
+                local cell = type(getCell) == "function" and getCell()
+                local square = cell and cell:getGridSquare(math.floor(cx), math.floor(cy), 0)
+                if square and SafeHouse and type(SafeHouse.getSafeHouse) == "function" then
+                    safehouse = SafeHouse.getSafeHouse(square)
+                end
             end)
             if safehouse ~= nil then
                 local owner = safehouse:getOwner()
                 if owner and owner ~= "" then
-                    local key = tostring(owner)
-                    -- Friendly faction gets a discount, hostile pays toll
                     local relations = P() and P().Relations
                     local stance = "neutral"
                     if relations and type(relations.playerStance) == "function" then
-                        local actor = D.driverShell(caravan)
+                        local actor = A.Interact and A.Interact.leaderActor(caravan)
                         if actor then
                             local p = A.players()[1]
                             if p then pcall(function() stance = relations.playerStance(actor, p) end) end

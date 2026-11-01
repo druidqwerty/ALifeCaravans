@@ -121,7 +121,9 @@ end
 
 function Ledger.count()
     local count = 0
-    for _ in pairs(Ledger.open().caravans) do count = count + 1 end
+    for _, c in pairs(Ledger.open().caravans) do
+        if c.state ~= "defeated" then count = count + 1 end
+    end
     return count
 end
 

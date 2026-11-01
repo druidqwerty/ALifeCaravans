@@ -507,14 +507,17 @@ function S.survivors(caravan, x, y, radius)
     return out
 end
 
--- DrivingCrewHome restores a binding and mixed-seat permission, but no session.
--- Only that parked, owned case may reconnect NPCs around an existing passenger.
+-- Both saved crew and DrivingFleet.pruneDead leave bindings without sessions.
+-- Reconnect only a proven parked owned crew; never interrupt a live handoff.
 function S.canRestoreRiders(caravan, vehicleId)
     local car = type(getVehicleById) == "function" and getVehicleById(vehicleId) or nil
     if not car or type(caravan.id) ~= "string" or A.vehicleTag(car) ~= caravan.id then return false end
     local owner, session, sleeping = S.sessionOf(vehicleId)
     local binding = owner and owner.bindings and owner.bindings[vehicleId]
-    if session or sleeping or not binding or binding.restoredCrew ~= true then return false end
+    if session or sleeping or not binding then return false end
+    local pruned = type(binding.cleanupRevision) == "number" and binding.cleanupRevision > 0
+        and type(binding.revision) == "number" and binding.cleanupRevision <= binding.revision
+    if binding.restoredCrew ~= true and not pruned then return false end
     if not (owner.allowRiders and owner.allowRiders[vehicleId] == true
             and owner.carModes and owner.carModes[vehicleId] == "mixed") then return false end
     if (owner.departures and owner.departures[vehicleId]) or (owner.pending and owner.pending[vehicleId]) then return false end
@@ -527,6 +530,20 @@ function S.canRestoreRiders(caravan, vehicleId)
     if not safe or not parked then return false end
     local owned, bound, available, bodies = {}, {}, false, {}
     for _, uid in ipairs(caravan.actorUids or {}) do owned[uid] = true end
+    if pruned then
+        local registry = P() and P().ActorRegistry
+        local confirmedDeath = false
+        if not registry then return false end
+        for uid in pairs(owned) do
+            local ok, actor = pcall(registry.read, uid)
+            if ok and actor and actor.lifecycle == "dead" then confirmedDeath = true end
+        end
+        if not confirmedDeath then return false end
+        for _, spec in ipairs(binding.crew or {}) do
+            local ok, actor = pcall(registry.read, spec.uid)
+            if not ok or not actor or actor.lifecycle ~= "active" or actor.generation ~= spec.generation then return false end
+        end
+    end
     for _, spec in ipairs(binding.crew or {}) do
         if not owned[spec.uid] then return false end
         bound[spec.uid] = true
@@ -662,6 +679,9 @@ function S.recrew(caravan, vehicleId, route, limit, reserved)
     if not keyOK or granted ~= true then
         return false, "driver_key_failed:" .. tostring(keyOK and keyReason or granted)
     end
+    -- Keep revisions monotonic across cleanup: remote clients remember them.
+    local previousBinding = owner.bindings and owner.bindings[vehicleId]
+    local nextRevision = (tonumber(previousBinding and previousBinding.revision) or 0) + 1
     -- Do all fallible planning before releasing the old session.
     if not S.releaseCar(vehicleId, caravan.id) then return false, "foreign_session" end
     owner.bindings = owner.bindings or {}
@@ -682,7 +702,7 @@ function S.recrew(caravan, vehicleId, route, limit, reserved)
     local token = "alc-recrew:" .. tostring(vehicleId) .. ":" .. tostring(S.recrewSerial)
     local old = { player = player, systemArrival = true, tuning = tuning, speedKmh = caravan.speedKmh, cruiseSpeed = caravan.speedKmh / 3.6,
         route = points, boardingDepart = true, onWaypointReached = not (type(isServer) == "function" and isServer()) and owner.waypointReached or nil }
-    local binding = { vehicleId = vehicleId, player = player, crew = crew, revision = ((owner.bindings[vehicleId] and owner.bindings[vehicleId].revision) or 0) + 1,
+    local binding = { vehicleId = vehicleId, player = player, crew = crew, revision = nextRevision,
         status = "Caravan crew boarding.", restoredCrew = restoredRiders or nil }
     owner.bindings[vehicleId] = binding
     if type(p.DrivingFleet.rememberVehicle) == "function" then pcall(p.DrivingFleet.rememberVehicle, binding, car) end
@@ -727,6 +747,7 @@ function S.abandon(caravan, vehicleId)
     if car == nil or A.vehicleTag(car) ~= caravan.id or A.vehicleHasPlayer(car) then return false end
     local owner, s = S.sessionOf(vehicleId)
     if not S.releaseCar(vehicleId, caravan.id) then return false end
+    A.tagVehicle(car, nil, nil)
     for index = #(caravan.vehicleIds or {}), 1, -1 do
         if caravan.vehicleIds[index] == vehicleId then table.remove(caravan.vehicleIds, index) end
     end
