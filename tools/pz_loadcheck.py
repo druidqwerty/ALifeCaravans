@@ -78,7 +78,7 @@ def start():
             "-Djava.library.path=./win64/;./", "-cp", "./;projectzomboid.jar", "zombie.gameStates.MainScreenState",
             "-cachedir=" + CACHE, "-nosteam"]
     flags = subprocess.CREATE_NEW_PROCESS_GROUP | 0x00000008
-    p = subprocess.Popen(args, cwd=GAME, stdout=log, stderr=subprocess.STDOUT, creationflags=flags | 0x01000000)
+    p = subprocess.Popen(args, cwd=GAME, stdout=log, stderr=subprocess.STDOUT, creationflags=flags)
     json.dump({"pid": p.pid}, open(PIDFILE, "w"))
     print("client pid", p.pid, "cache", CACHE)
 

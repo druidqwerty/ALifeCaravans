@@ -1,11 +1,13 @@
--- B42.21 retains native wheel brakes across an NPC vehicle handoff.
--- Clear the parked controller only once at the start of a verified ALC drive.
--- Standard ZombieBuddy bridge; no vehicle relocation, extra propulsion or AI
--- replacement. SP leases local simulation and wakes a verified driving body
--- through vanilla chunk-aware activation (including cars restored from a save).
+-- Pure-Lua vehicle physics adapters for verified A-Life: Caravans sessions.
+-- No Java bridge or ZombieBuddy dependency is required:
+--   * SP local simulation uses BaseVehicle:authorizationChanged(npc / nil);
+--   * SP save/reload wake uses checkSurroundingChunks() + setPhysicsActive();
+--   * Parked wheel brakes are cleared once at the start of a verified drive
+--     through a zero-power regulator step in BaseVehicle:updatePhysics(), plus
+--     resetting premature boardPrepared flags while the driver is still outside.
 require "ALifeCaravans/00_ALC_Core"
 local A = ALifeCaravans
-local F = { spVehicles = {} }
+local F = { spVehicles = {}, spLeases = {} }
 A.Physics = F
 
 function F.ridersAllowed(v)
@@ -16,28 +18,91 @@ end
 function F.playersAllowed(v)
     if not A.vehicleHasPlayer(v) then return true end
     if not F.ridersAllowed(v) or instanceof(v:getDriver(), "IsoPlayer") then return false end
-    for seat = 0, v:getMaxPassengers()-1 do
+    for seat = 0, v:getMaxPassengers() - 1 do
         local body = v:getCharacter(seat)
         if body and instanceof(body, "IsoPlayer") and (seat == 0 or body:getVehicle() ~= v) then return false end
     end
     return true
 end
 
-function F.releaseSP(v)
-    if not v or isServer() or isClient() then return false end
-    F.spVehicles[v] = nil
-    if type(ALCNativeReleaseSP) ~= "function" then return false end
-    local ok, result = pcall(ALCNativeReleaseSP, v)
-    if not ok then A.log("SP vehicle lease release failed:", tostring(result)) end
-    return ok and result == true
+function F.wakeSP(v, npc, driving, s)
+    if not driving or v:getDriver() ~= npc or npc:getVehicle() ~= v
+            or not v:isEngineRunning() or math.abs(v:getCurrentSpeedKmHour()) > 0.5 then return false end
+    if s and s.alcWokeSP and (type(v.isPhysicsActive) ~= "function" or v:isPhysicsActive() == true) then return true end
+    if type(v.checkSurroundingChunks) == "function" then v:checkSurroundingChunks() end
+    if type(v.setPhysicsActive) == "function" then
+        if type(v.isPhysicsActive) == "function" and v:isPhysicsActive() then v:setPhysicsActive(false) end
+        v:setPhysicsActive(true)
+    end
+    local active = type(v.isPhysicsActive) ~= "function" or v:isPhysicsActive() == true
+    if s then s.alcWokeSP = active or nil end
+    return active
 end
 
--- No MP bypass: the multiplayer handoff/owner rules remain entirely A-Life's.
--- This guard accepts members approaching their reserved doors as well as those
--- already seated. It never teleports or seats an NPC itself.
+function F.acquireSP(v, npc, caravanId, uid, generation, ridersAllowed, driving, s)
+    if isClient() or isServer() or not v or not npc or npc:isDead() then return false end
+    if (type(v.getController) == "function" and v:getController() == nil)
+            or (type(v.getSquare) == "function" and v:getSquare() == nil) then return false end
+    local vData, nData = v:getModData(), npc:getModData()
+    if not caravanId or not vData or vData[A.MODDATA_ID] ~= caravanId
+            or not uid or not nData or nData.ProjectALifeUID ~= uid
+            or type(nData.ProjectALifeGeneration) ~= "number" or nData.ProjectALifeGeneration ~= generation
+            or (A.vehicleHasPlayer(v) and not ridersAllowed)
+            or (v:getDriver() ~= nil and v:getDriver() ~= npc)
+            or (npc:getVehicle() ~= nil and npc:getVehicle() ~= v)
+            or (type(v.getVehicleTowedBy) == "function" and v:getVehicleTowedBy() ~= nil)
+            or (type(v.getVehicleTowing) == "function" and v:getVehicleTowing() ~= nil) then return false end
+    if v:isLocalPhysicSim() then
+        F.wakeSP(v, npc, driving, s)
+        return true
+    end
+    local nx, ny, nz = A.xyz(npc)
+    local vx, vy, vz = A.xyz(v)
+    if v:getNetPlayerId() ~= -1 or math.abs(v:getCurrentSpeedKmHour()) > 0.5
+            or not nx or not vx or math.abs((nz or 0) - (vz or 0)) > 0.5
+            or A.dist(nx, ny, vx, vy) > 40 or type(v.authorizationChanged) ~= "function" then return false end
+    local assignedId = type(npc.getOnlineID) == "function" and npc:getOnlineID() or -1
+    v:authorizationChanged(npc)
+    if not v:isLocalPhysicSim() then return false end
+    F.spLeases[v] = { assignedId = assignedId }
+    F.wakeSP(v, npc, driving, s)
+    return true
+end
+
+function F.syncCrashGuard(v, members, active)
+    if not v or isClient() then return end
+    for _, member in ipairs(members or {}) do
+        local body = member and member.npc
+        if body and not instanceof(body, "IsoPlayer") and type(body.setGodMod) == "function" then
+            local noBodyDamage = type(body.getBodyDamage) ~= "function" or body:getBodyDamage() == nil
+            if noBodyDamage then
+                local guard = active == true and member.boarded == true and body:getVehicle() == v and not body:isDead()
+                pcall(body.setGodMod, body, guard, true)
+            end
+        end
+    end
+end
+
+function F.releaseSP(v)
+    if not v or isServer() or isClient() then return false end
+    local s = F.spVehicles[v]
+    if s and ProjectALife and ProjectALife.DrivingDemo and type(ProjectALife.DrivingDemo.members) == "function" then
+        F.syncCrashGuard(v, ProjectALife.DrivingDemo.members(s), false)
+    end
+    F.spVehicles[v] = nil
+    local lease = F.spLeases[v]
+    F.spLeases[v] = nil
+    if not lease then return false end
+    if not instanceof(v:getDriver(), "IsoPlayer") and v:isLocalPhysicSim()
+            and v:getNetPlayerId() == lease.assignedId and type(v.authorizationChanged) == "function" then
+        local ok, err = pcall(v.authorizationChanged, v, nil)
+        if not ok then A.log("SP vehicle lease release failed:", tostring(err)) end
+    end
+    return true
+end
+
 function F.ensureSP(s, entry)
-    if isServer() or isClient() or not s or not entry or s.alcSPError
-            or type(ALCNativeAcquireSP) ~= "function" then return false end
+    if isServer() or isClient() or not s or not entry or s.alcSPError then return false end
     local v, npc = s.vehicle, s.npc
     if not v or not npc or not A.Convoy or A.Convoy.known[v:getId()] ~= entry
             or A.Convoy.sessionFor(v:getId()) ~= s then return false end
@@ -62,13 +127,15 @@ function F.ensureSP(s, entry)
         seenSeats[seat], seenBodies[body] = true, true
     end
     if not seenBodies[npc] or not seenSeats[0] then return refuse() end
-    for seat = 0, v:getMaxPassengers()-1 do
+    for seat = 0, v:getMaxPassengers() - 1 do
         local body = v:getCharacter(seat)
         if body and not seenBodies[body] and not (seat > 0 and instanceof(body, "IsoPlayer") and F.ridersAllowed(v)) then return refuse() end
     end
     local driving = allBoarded and s.phase == "driving" and s.entryComplete == true and not entry.halted
         and not s.braking and not s.exitAt and not s.exitRequested and not s.detaching
-    local ok, result = pcall(ALCNativeAcquireSP, v, npc, entry.caravanId, s.uid, s.generation, F.ridersAllowed(v), driving)
+    if not driving then s.alcWokeSP = nil end
+    F.syncCrashGuard(v, members, driving)
+    local ok, result = pcall(F.acquireSP, v, npc, entry.caravanId, s.uid, s.generation, F.ridersAllowed(v), driving, s)
     if not ok then
         if not s.alcSPError then A.log("SP vehicle adapter failed:", tostring(result)) end
         s.alcSPError = true
@@ -78,8 +145,6 @@ function F.ensureSP(s, entry)
     return refuse()
 end
 
--- Called when known caravans/session lifetimes change. Sleeping/restoring a car
--- may create a different session; only an explicit revalidated prepare reacquires.
 function F.sweepSP()
     if isServer() or isClient() then return end
     local release = {}
@@ -90,12 +155,81 @@ function F.sweepSP()
     for _, v in ipairs(release) do F.releaseSP(v) end
 end
 
+function F.releaseBrake(v, ridersAllowed)
+    if not v or isServer() or not v:isLocalPhysicSim() then return false, "not_local" end
+    if isClient() then
+        local player = getSpecificPlayer(0)
+        if not player or v:getNetPlayerId() ~= player:getOnlineID() then return false, "not_owner" end
+    end
+    if not v:isEngineRunning() then return false, "engine_off" end
+    if math.abs(v:getCurrentSpeedKmHour()) > 0.5 then return false, "moving" end
+    local driver = v:getDriver()
+    if not driver or instanceof(driver, "IsoPlayer") or driver:isDead() or driver:getVehicle() ~= v then return false, "driver" end
+    local data = driver:getModData()
+    if not data or data.ProjectALifeUID == nil then return false, "driver_identity" end
+    if A.vehicleHasPlayer(v) and not ridersAllowed then return false, "player_aboard" end
+    if (type(v.getController) == "function" and v:getController() == nil)
+            or (type(v.isInvalidChunkAhead) == "function" and v:isInvalidChunkAhead())
+            or (type(v.isInvalidChunkBehind) == "function" and v:isInvalidChunkBehind())
+            or type(v.updatePhysics) ~= "function" then return false, "physics" end
+    local needUnseat = type(driver.getMoodles) == "function" and driver:getMoodles() == nil
+    if needUnseat and (type(v.clearPassenger) ~= "function" or type(v.enterRSync) ~= "function") then
+        return false, "physics"
+    end
+    local originalBrake = v:getBrakingForce()
+    local reg = type(v.isRegulator) == "function" and v:isRegulator() or false
+    local regSpeed = type(v.getRegulatorSpeed) == "function" and v:getRegulatorSpeed() or 0
+    local hasFeature = type(v.setEngineFeature) == "function" and type(v.getEngineQuality) == "function"
+        and type(v.getEngineLoudness) == "function" and type(v.getEnginePower) == "function"
+    local quality, loudness, power
+    if hasFeature then quality, loudness, power = v:getEngineQuality(), v:getEngineLoudness(), v:getEnginePower() end
+    local rpm = type(v.getEngineSpeed) == "function" and v:getEngineSpeed() or nil
+    local stoplights = type(v.getStoplightsOn) == "function" and v:getStoplightsOn() or nil
+    local sc = type(UIManager) == "table" and type(UIManager.getSpeedControls) == "function" and UIManager.getSpeedControls() or nil
+    local gameSpeed = sc and type(sc.getCurrentGameSpeed) == "function" and sc:getCurrentGameSpeed() or nil
+    local unseated = false
+    local ok, err = pcall(function()
+        if needUnseat then
+            v:clearPassenger(0)
+            unseated = true
+        end
+        v:setBrakingForce(0)
+        if type(v.setBraking) == "function" then v:setBraking(false) end
+        if stoplights ~= nil and not isClient() and type(v.setStoplightsOn) == "function" then v:setStoplightsOn(false) end
+        if type(v.isBackSignalEmitting) == "function" and v:isBackSignalEmitting()
+                and type(v.onBackMoveSignalStop) == "function" then v:onBackMoveSignalStop() end
+        if hasFeature then v:setEngineFeature(quality, loudness, 0) end
+        if type(v.setRegulator) == "function" then v:setRegulator(true) end
+        if type(v.setRegulatorSpeed) == "function" then v:setRegulatorSpeed(math.abs(v:getCurrentSpeedKmHour()) + 5) end
+        v:updatePhysics()
+    end)
+    if unseated and v:getDriver() ~= driver then
+        pcall(v.enterRSync, v, 0, driver, v)
+        if type(v.setCharacterPosition) == "function" then pcall(v.setCharacterPosition, v, driver, 0, "inside") end
+    end
+    if type(v.setRegulatorSpeed) == "function" then pcall(v.setRegulatorSpeed, v, regSpeed) end
+    if type(v.setRegulator) == "function" then pcall(v.setRegulator, v, reg) end
+    if hasFeature then pcall(v.setEngineFeature, v, quality, loudness, power) end
+    if rpm ~= nil and type(v.setEngineSpeed) == "function" then pcall(v.setEngineSpeed, v, rpm) end
+    if stoplights ~= nil and not isClient() and type(v.setStoplightsOn) == "function" then pcall(v.setStoplightsOn, v, stoplights) end
+    if sc and gameSpeed and gameSpeed > 1 and type(sc.SetCurrentGameSpeed) == "function" then
+        pcall(sc.SetCurrentGameSpeed, sc, gameSpeed)
+    end
+    pcall(v.setBrakingForce, v, originalBrake)
+    if not ok then error(err) end
+    return true
+end
+
 function F.prepare(s, entry)
     if not s or not entry or isServer() then return false end
     if not isClient() then F.ensureSP(s, entry) end
-    if s.phase ~= "driving" then s.alcBrakeReleased = nil return false end
+    if s.phase == "approach" and s.boardPrepared and not s.boarded and not s.releaseAt
+            and s.vehicle and s.vehicle:getDriver() == nil then
+        s.boardPrepared = nil
+    end
+    if s.phase ~= "driving" then s.alcBrakeReleased, s.alcBrakeError, s.alcBrakeWhy = nil, nil, nil return false end
     if s.alcBrakeReleased or s.alcBrakeError or entry.halted or s.braking or s.exitAt or s.exitRequested
-            or s.detaching or not s.entryComplete or type(ALCNativeReleaseBrake) ~= "function" then return false end
+            or s.detaching or not s.entryComplete then return false end
     local v, npc = s.vehicle, s.npc
     if not v or not npc or not A.Convoy or A.Convoy.known[v:getId()] ~= entry then return false end
     if A.Convoy.sessionFor(v:getId()) ~= s then return false end
@@ -117,20 +251,22 @@ function F.prepare(s, entry)
         if not data or data.ProjectALifeUID ~= member.uid
                 or data.ProjectALifeGeneration ~= member.generation then return false end
     end
-    local original = v:getBrakingForce()
-    local ok, err = pcall(function()
-        v:setBrakingForce(0)
-        if ALCNativeReleaseBrake(v, F.ridersAllowed(v)) ~= true then error("native guard declined parked-brake release") end
-    end)
-    -- Restore the vehicle's brake specification even if the bridge throws.
-    v:setBrakingForce(original)
+    local ok, result, why = pcall(F.releaseBrake, v, F.ridersAllowed(v))
     if not ok then
-        if not s.alcBrakeError then A.log("parked brake release refused:", tostring(err)) end
+        if not s.alcBrakeError then A.log("parked brake release failed:", tostring(result)) end
         s.alcBrakeError = true
         return false
     end
+    if result ~= true then
+        if s.alcBrakeWhy ~= why then
+            s.alcBrakeWhy = why
+            A.debug("car", v:getId(), "parked brake release waiting:", tostring(why))
+        end
+        return false  -- transient guard decline; retry next tick
+    end
+    s.alcBrakeWhy = nil
     s.alcBrakeReleased = true
-    A.debug("car", v:getId(), "native parked brake released for NPC drive")
+    A.debug("car", v:getId(), "parked brake released for NPC drive")
     return true
 end
 

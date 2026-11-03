@@ -17,6 +17,11 @@ import re
 import sys
 
 import lupa
+try:
+    import lupa.lua51
+    lupa.LuaRuntime = lupa.lua51.LuaRuntime
+except ImportError:
+    pass
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MOD_ROOT = os.path.dirname(HERE).replace("\\", "/")

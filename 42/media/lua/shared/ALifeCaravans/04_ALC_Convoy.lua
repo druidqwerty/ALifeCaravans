@@ -64,6 +64,10 @@ function C.setKnown(entries)
     C.known = fresh
     if A.Client and A.Client.invalidateTrade then A.Client.invalidateTrade(fresh) end
     if A.Physics.sweepSP then A.Physics.sweepSP() end
+    for id, entry in pairs(fresh) do
+        local s, sleeping = C.sessionFor(id)
+        if s ~= nil and not sleeping then pcall(A.Physics.prepare, s, entry) end
+    end
 end
 
 function C.sessionFor(id)

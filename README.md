@@ -8,7 +8,13 @@ Faction caravans for [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sh
 
 Free and open source. The code is developed with AI; direction, testing and time are mine. [Support the mods on Boosty](https://boosty.to/lrgpp).
 
-> **0.6.0 — living crews, clean defeat and a new roadside interface.** See [verification and limits](TEST_0.6.0.md).
+> **0.6.1 — pure-Lua vehicle physics, no ZombieBuddy required, and NPC crash-damage guard.** See [verification and limits](TEST_0.6.1.md).
+
+## New in 0.6.1
+
+- **No ZombieBuddy or Java agent installation required.** Caravans now handles singleplayer vehicle authority (`BaseVehicle:authorizationChanged`), save/reload physics wake (`checkSurroundingChunks` / `setPhysicsActive`) and parked wheel-brake release entirely in Lua (`06_ALC_Physics.lua`). The bundled `ALifeCaravans.jar` bridge and the `ZombieBuddy` dependency in `mod.info` have been removed.
+- **Immediate physics preparation on spawn and reboarding.** Newly rendered and re-crewed caravan sessions prepare local vehicle physics as soon as the convoy entry is published, avoiding premature authority loss on the first client tick.
+- **Vanilla car-crash NPE guard for seated NPCs.** In Build 42.21, `BaseVehicle.addRandomDamageFromCrash` assumes every seated passenger has a `BodyDamage` object, which is `null` on `IsoZombie`-backed A-Life NPCs. Seated bodiless crew now receive the engine crash-damage exemption while actively driving and clear it on release or exit.
 
 ## New in 0.6.0
 
@@ -43,13 +49,11 @@ Save/reload recovery also preserves a seated player instead of deadlocking the c
 
 ## Requirements and installation
 
-- **Project Zomboid Build 42.21** and **Project A-Life 1.4.6** are the verified target for 0.6.0. Keep A-Life Driving enabled. Later dependency/game versions require their own verification.
-- [ZombieBuddy](https://steamcommunity.com/sharedfiles/filedetails/?id=3619862853) **with its standard Java agent installed** on the client and server. Follow ZombieBuddy's installation instructions: subscribing alone is insufficient. Experimental mode is not required.
+- **Project Zomboid Build 42.21** and **Project A-Life 1.4.6** are the verified target for 0.6.1. Keep A-Life Driving enabled. Later dependency/game versions require their own verification.
 - [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sharedfiles/filedetails/?id=3803984183).
 - [A-Life: Factions Expanded](https://steamcommunity.com/sharedfiles/filedetails/?id=3813871509) is optional, but recommended for the full experience.
-- Every player and the server need the same mod/dependency versions. Load `ZombieBuddy;ProjectALifeNPCs;ALifeCaravans`, then restart after an update. Use the published package's existing directory layout rather than mixing files from different releases.
-
 - [Project A-Life – Jeem Extension](https://steamcommunity.com/sharedfiles/filedetails/?id=3806944055) is optional, but recommended for the full experience; its public palette integrates with the new windows.
+- Every player and the server need the same mod/dependency versions. Load `ProjectALifeNPCs;ALifeCaravans`, then restart after an update. No Java agent or `ZombieBuddy` installation is required. Use the published package's existing directory layout rather than mixing files from different releases.
 
 ## Settings and use
 
@@ -62,13 +66,13 @@ Right-click within about 18 tiles of a caravan to interact. Trade and ride reque
 - **Distant travel is approximate.** The ledger follows A-Life's town/road graph and interpolates between graph points. A faraway map marker is not a recording of a physical car precisely following every road bend; it can appear to cross terrain between coarse nodes.
 - **Nearby travel is physical.** Loaded road tiles supply local routes; A-Life drives actual vehicles with collision, formation, steering and boarding. Unloaded terrain and obstacles can make them wait.
 - **The world owner controls records and inventory.** SP owns its world directly; an MP server owns the ledger and exchanges. A-Life assigns driving simulation to clients in multiplayer.
-- **Compatibility is limited in scope.** An original ZombieBuddy Java bridge handles the required NPC-vehicle compatibility, parked-body wake and brake paths. The add-on does not redistribute A-Life source code. Persistent caravan records are reconciled with surviving cars and crews on load, including cars carrying a player.
+- **Compatibility is limited in scope.** Pure-Lua vehicle physics adapters (`06_ALC_Physics.lua`) handle the required NPC-vehicle compatibility, parked-body wake, brake release and seated crash-damage guard without any Java agent. The add-on does not redistribute A-Life source code. Persistent caravan records are reconciled with surviving cars and crews on load, including cars carrying a player.
 
 ## Verification
 
-[0.6.0 current-source report](TEST_0.6.0.md). Previous passenger save/reload and driver replacement evidence remains in [0.5.0](TEST_0.5.0.md); it is not presented as a new 0.6.0 run.
+[0.6.1 current-source report](TEST_0.6.1.md). Two-client MP evidence remains in [0.6.0](TEST_0.6.0.md) and passenger save/reload and driver replacement evidence in [0.5.0](TEST_0.5.0.md).
 
-Developer checks: `python tools/run_test.py` and `python tools/test_native.py`.
+Developer checks: `python tools/run_test.py` (416 assertions) and `python tools/pz_loadcheck.py`.
 
 ## Current limits
 
@@ -80,6 +84,8 @@ Developer checks: `python tools/run_test.py` and `python tools/test_native.py`.
 
 ## Credits
 
-**Vice / Project A-Life:** NPCs, driving, arrivals, road graph, Knox County Radio and dialogue. **Minidoracat / MiniMap - AutoDrive for B42 (MIT):** studied for road-following, waypoint and stuck-recovery ideas; its code was not copied. **ZombieBuddy:** Java integration. Development uses AI assistance, with direction and testing by druid.
+**Vice / Project A-Life:** NPCs, driving, arrivals, road graph, Knox County Radio and dialogue. **Minidoracat / MiniMap - AutoDrive for B42 (MIT):** studied for road-following, waypoint and stuck-recovery ideas; its code was not copied. Development uses AI assistance, with direction and testing by druid.
 
 Jeem Extension and A-Life: Living Factions were studied and loaded in the joint compatibility lab. No third-party code or assets are bundled.
+
+© 2026 druidqwerty. Released under the MIT License. Project A-Life by Vice.
