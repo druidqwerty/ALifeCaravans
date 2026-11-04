@@ -41,11 +41,15 @@ function R.deadSleepingCrew(c, id, s, sleeping, now, owner)
     return now - c.crewDeadAt[key] >= R.missingGraceMs
 end
 
-function R.queue(c, id, reason, now)
+function R.queue(c, id, reason, now, delayMs)
     c.recrew = c.recrew or {}
     local key = tostring(id)
-    if c.recrew[key] then return end
-    c.recrew[key] = {vehicleId=id, reason=reason or "regroup", firstAtMs=now, dueMs=now+4000}
+    local due = now + (tonumber(delayMs) or 4000)
+    if c.recrew[key] then
+        if due < (c.recrew[key].dueMs or math.huge) then c.recrew[key].dueMs = due end
+        return
+    end
+    c.recrew[key] = {vehicleId=id, reason=reason or "regroup", firstAtMs=now, dueMs=due}
 end
 
 function R.finished(c, id, reason)
@@ -67,7 +71,7 @@ function R.watch(c, now)
         if (age >= 20000 and c.crewQuietAtMs and now-c.crewQuietAtMs >= R.quietMs) or age >= 150000 then
             c.state = "rendered"
             A.Director.resume(c)
-            for _, id in ipairs(c.vehicleIds or {}) do R.queue(c,id,"post_combat",now) end
+            for _, id in ipairs(c.vehicleIds or {}) do R.queue(c,id,"post_combat",now,1500) end
         else return end
     end
     if c.halted or (c.ambush and c.ambush.state == "fighting") then return end

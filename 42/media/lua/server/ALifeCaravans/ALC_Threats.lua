@@ -42,16 +42,40 @@ function T.tick(c, now, cars)
         c.dangerUntilMs = now+10000
         if not c.threatState then
             c.threatState = "escape"
+            c.threatEscapeStartMs = now
+            c.threatEscapeX, c.threatEscapeY = c.x, c.y
             D.publishDirty = true
             A.log(c.id,"local threat: attempting departure",pressure.near,pressure.contact)
+        elseif c.threatEscapeX and c.x and A.dist(c.x, c.y, c.threatEscapeX, c.threatEscapeY) >= 2.5 then
+            c.threatEscapeStartMs = now
+            c.threatEscapeX, c.threatEscapeY = c.x, c.y
         end
         -- The scripted fight has its own bounded regroup; do not cancel it
-        -- midway or manufacture passengers. Normal parked crews stay seated.
+        -- midway or manufacture passengers. Normal parked crews stay seated
+        -- unless a swarm pins the car in place and prevents departure.
         if not (c.ambush and c.ambush.state == "fighting") then
             if c.halted then D.resume(c) end
+            local hasSeatedSession = false
             for _, row in ipairs(cars) do
                 local _, session, sleeping = A.Spawn.sessionOf(row.id)
-                if not session and not sleeping then A.Crew.queue(c,row.id,"danger_return",now) end
+                if not session and not sleeping then
+                    A.Crew.queue(c,row.id,"danger_return",now)
+                elseif session and not session.exitAt and not session.exitRequested then
+                    hasSeatedSession = true
+                end
+            end
+            local pinned = hasSeatedSession and c.threatEscapeStartMs and (now - c.threatEscapeStartMs >= 8000)
+                and (pressure.contact >= 2 or (pressure.contact >= 1 and pressure.near >= 4))
+                and not (type(D.ridersAboard) == "function" and D.ridersAboard(c))
+            if pinned and A.Spawn and type(A.Spawn.dismount) == "function" then
+                c.state = "fighting"
+                c.fightingAtMs = now
+                c.crewQuietAtMs = nil
+                c.threatState, c.threatEscapeStartMs = nil, nil
+                A.Spawn.dismount(c, { x = c.x or cars[1].x, y = c.y or cars[1].y })
+                D.publishDirty = true
+                A.log(c.id, "local threat pinned car: crew dismounting to fight", pressure.near, pressure.contact)
+                return
             end
         end
         if now >= (c.threatSaidAtMs or 0) then
@@ -61,6 +85,7 @@ function T.tick(c, now, cars)
         end
     elseif c.threatState and now >= (c.dangerUntilMs or 0) then
         c.threatState = nil
+        c.threatEscapeStartMs, c.threatEscapeX, c.threatEscapeY = nil, nil, nil
         D.publishDirty = true
     end
 end

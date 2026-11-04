@@ -62,6 +62,26 @@ return function(check, newVehicle)
     D.livingWorldCheckAtMs=0
     D.livingWorldTick(CLOCK+24000,{})
     check("unloaded square never sent to SafeHouse API",calls==1)
+
+    -- Cornered vehicle dismount + resume reboard regressions
+    D.resume, A.Crew.queue = saved.resume, saved.queue
+    local dismounted = 0
+    local oldDismount = A.Spawn.dismount
+    A.Spawn.dismount = function() dismounted = dismounted + 1 end
+    A.Spawn.sessionOf = function() return {}, { phase = "driving" }, nil end
+    bodies = { zombie(101, 100, 0), zombie(101.5, 100, 0), zombie(102, 100, 0), zombie(103, 100, 0) }
+    c.state, c.halted, c.threatState, c.threatEscapeStartMs = "rendered", nil, nil, nil
+    T.tick(c, CLOCK + 30000, cars)
+    check("swarm contact starts escape timer before dismounting", c.state == "rendered" and c.threatState == "escape" and dismounted == 0)
+    T.tick(c, CLOCK + 39000, cars)
+    check("pinned car under heavy contact dismounts crew to fight", c.state == "fighting" and c.threatState == nil and dismounted == 1)
+    A.Spawn.sessionOf = function() return {}, nil, nil end
+    c.recrew = {}
+    D.resume(c)
+    check("resume immediately queues halt_resume reboarding for dismounted cars",
+        c.recrew[tostring(car.id)] ~= nil and c.recrew[tostring(car.id)].reason == "halt_resume")
+    A.Spawn.dismount = oldDismount
+
     getCell,SafeHouse=saved.cell,saved.safe
     D.resume,A.Ledger.list,T.scan=saved.resume,saved.list,saved.scan
     A.Spawn.sessionOf,A.Crew.queue=saved.session,saved.queue

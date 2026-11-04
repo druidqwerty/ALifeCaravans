@@ -18,7 +18,7 @@ require "ALifeCaravans/03_ALC_Roads"
 require "ALifeCaravans/06_ALC_Physics"
 
 local A = ALifeCaravans
-local C = { known = {}, nextTickMs = 0, intervalMs = 600, goalReach = 22, lowQueue = 2, restartDelayMs = 3000,
+local C = { known = {}, nextTickMs = 0, intervalMs = 300, goalReach = 22, lowQueue = 3, restartDelayMs = 2000,
     formation = { fullGap = 16, stopGap = 7, regroupGap = 45, regroupDone = 25, regroupFactor = 0.5, crawl = 0.35 },
     stuck = { skipMs = 25000, rescoutMs = 60000, reportMs = 110000, moveTiles = 2.5 } }
 A.Convoy = C
@@ -88,11 +88,46 @@ function C.localPlayer()
     return A.players()[1]
 end
 
--- The next goal for a car: the first route goal farther than goalReach from (x, y).
+local function passedGoal(x, y, g1, g2)
+    if g1 == nil or g2 == nil then return false end
+    local vx, vy = g2.x - g1.x, g2.y - g1.y
+    local len2 = vx * vx + vy * vy
+    if len2 < 1 then return false end
+    local t = ((x - g1.x) * vx + (y - g1.y) * vy) / len2
+    if t <= 0.15 then return false end
+    local clamped = math.max(0, math.min(1, t))
+    local px, py = g1.x + vx * clamped, g1.y + vy * clamped
+    if A.dist(x, y, px, py) > 40 then return false end
+    return A.dist(x, y, g2.x, g2.y) < math.sqrt(len2)
+end
+
+local function vehicleHeading(vehicle)
+    if vehicle == nil or type(vehicle.getForwardVector) ~= "function" or type(Vector3f) ~= "table" and type(Vector3f) ~= "userdata" then
+        return nil
+    end
+    local ok, h = pcall(function()
+        local f = vehicle:getForwardVector(Vector3f.new())
+        return f and A.atan2(f:z(), f:x()) or nil
+    end)
+    return ok and type(h) == "number" and h or nil
+end
+
+-- The next goal for a car: the first route goal farther than goalReach from (x, y)
+-- that has not already been passed along the current segment.
 function C.goalFor(entry, x, y)
     local goals = entry.goals or {}
     local index = entry.goalIndex or 1
-    while index <= #goals and A.dist(x, y, goals[index].x, goals[index].y) <= C.goalReach do index = index + 1 end
+    local lookLimit = math.min(#goals - 1, index + 8)
+    for k = index, lookLimit do
+        if A.dist(x, y, goals[k].x, goals[k].y) <= C.goalReach
+                or passedGoal(x, y, goals[k], goals[k + 1]) then
+            index = k + 1
+        end
+    end
+    while index <= #goals and (A.dist(x, y, goals[index].x, goals[index].y) <= C.goalReach
+            or (index < #goals and passedGoal(x, y, goals[index], goals[index + 1]))) do
+        index = index + 1
+    end
     entry.goalIndex = index
     return goals[index], index
 end
@@ -114,8 +149,15 @@ function C.legFor(entry, s, fresh)
         goal = C.goalFor(lookahead, from.x, from.y)
         if goal == nil then return nil, "route_queued" end
     end
+    local heading = fresh and vehicleHeading(vehicle) or nil
+    if heading == nil and tail ~= nil and s.route ~= nil and #s.route >= 2 then
+        local prev = s.route[#s.route - 1]
+        if A.dist(tail.x, tail.y, prev.x, prev.y) >= 1 then
+            heading = A.atan2(tail.y - prev.y, tail.x - prev.x)
+        end
+    end
     local scene = A.Roads.scene(C.localPlayer())
-    local points, info = A.Roads.scout(scene, from, goal, { maxPoints = 10 })
+    local points, info = A.Roads.scout(scene, from, goal, { maxPoints = 10, heading = heading })
     if #points == 0 then return nil, info.reason or "no road" end
     local out = {}
     local lastX, lastY = from.x, from.y
@@ -124,6 +166,11 @@ function C.legFor(entry, s, fresh)
             out[#out + 1] = { x = p.x, y = p.y }
             lastX, lastY = p.x, p.y
         end
+    end
+    if fresh and heading ~= nil and #out >= 2 then
+        local d1 = A.dist(out[1].x, out[1].y, from.x, from.y)
+        local along = (out[1].x - from.x) * math.cos(heading) + (out[1].y - from.y) * math.sin(heading)
+        if d1 < 6 and along < 2 then table.remove(out, 1) end
     end
     if #out == 0 then return nil, "no progress" end
     return out, info
@@ -167,12 +214,23 @@ function C.start(id, points, speedKmh)
     if client == nil or type(client.startDrive) ~= "function" then return false, "no driving client" end
     local ok, result = pcall(client.startDrive, id, points, speedKmh)
     if not ok then return false, result end
-    if type(result)=="boolean" then return result end
-    -- Upstream returns nil both on rejection and success: inspect its queued
-    -- request/state, not merely the absence of a Lua exception.
-    local s=client.sessions and client.sessions[id]
-    if client.departures and client.departures[id] then return true end
-    if s and (s.drivePending or s.phase=="readywait" or s.phase=="driving") then return true end
+    local started = false
+    if type(result)=="boolean" then
+        started = result
+    else
+        -- Upstream returns nil both on rejection and success: inspect its queued
+        -- request/state, not merely the absence of a Lua exception.
+        local s=client.sessions and client.sessions[id]
+        if client.departures and client.departures[id] then started = true
+        elseif s and (s.drivePending or s.phase=="readywait" or s.phase=="driving") then started = true end
+    end
+    if started then
+        local s = client.sessions and client.sessions[id]
+        local entry = C.known[id]
+        if s and entry and A.Physics and A.Physics.prepare then pcall(A.Physics.prepare, s, entry) end
+        return true
+    end
+    local s = client.sessions and client.sessions[id]
     return false, s and s.status or "departure not queued"
 end
 
@@ -300,6 +358,123 @@ local function playerVehicleNear(vehicle, radius)
     return false
 end
 
+function C.isCaravanVehicle(v)
+    if v == nil or type(v.getId) ~= "function" then return false end
+    local ok, id = pcall(function() return v:getId() end)
+    if ok and id ~= nil and C.known[id] ~= nil then return true, id, C.known[id] end
+    local tag = A.vehicleTag(v)
+    if tag ~= nil then return true, ok and id or nil, nil end
+    return false
+end
+
+function C.ensureTuning(s)
+    if type(s) ~= "table" or type(s.tuning) ~= "table" or s.alcTuned then return end
+    s.alcTuned = true
+    s.tuning.reverseDelay = 2000
+    s.tuning.reverseRetryMs = 4000
+    s.tuning.reverseDistance = 2.5
+    s.tuning.steeringSlow = 0.4
+    s.tuning.precisionKmh = 16
+    s.tuning.returnKmh = 11
+end
+
+function C.installHooks()
+    if C.hooksInstalled then return end
+    local p = ProjectALife
+    if type(p) ~= "table" or p.DrivingDemo == nil then return end
+    C.hooksInstalled = true
+    if type(p.DrivingEscape) == "table" and type(p.DrivingEscape.tick) == "function" then
+        A.wrap(p.DrivingEscape, "tick", function(original)
+            return function(s, now)
+                if s ~= nil and C.isCaravanVehicle(s.vehicle) then
+                    s.escapeUntil, s.escapeActive = nil, nil
+                    return
+                end
+                return original(s, now)
+            end
+        end, "DrivingEscape.tick")
+    end
+    if type(p.DrivingRoute) == "table" and type(p.DrivingRoute.scene) == "function" then
+        A.wrap(p.DrivingRoute, "scene", function(original)
+            return function(v, tuning)
+                local scene = original(v, tuning)
+                local isCaravan, id, entry = C.isCaravanVehicle(v)
+                if not isCaravan or type(scene) ~= "table" or type(scene.bodies) ~= "table" then return scene end
+                local convoyPositions = {}
+                local caravanId = entry and entry.caravanId or A.vehicleTag(v)
+                if caravanId ~= nil then
+                    for otherId, otherEntry in pairs(C.known) do
+                        if otherId ~= id and otherEntry.caravanId == caravanId then
+                            local os = C.sessionFor(otherId)
+                            local ov = (os and os.vehicle) or (type(getVehicleById) == "function" and getVehicleById(otherId)) or nil
+                            local ox, oy = A.xyz(ov)
+                            if ox ~= nil then convoyPositions[#convoyPositions + 1] = { x = ox, y = oy } end
+                        end
+                    end
+                end
+                local vx, vy = A.xyz(v)
+                local h = vehicleHeading(v)
+                local fx, fy = h and math.cos(h) or nil, h and math.sin(h) or nil
+                local filtered = {}
+                for _, b in ipairs(scene.bodies) do
+                    local sameConvoy = false
+                    if b.label == "vehicle" and #convoyPositions > 0 then
+                        for _, pos in ipairs(convoyPositions) do
+                            if A.dist(b.x, b.y, pos.x, pos.y) < 2.0 then
+                                sameConvoy = true
+                                break
+                            end
+                        end
+                    end
+                    if not sameConvoy then
+                        if (b.label == "player" or b.label == "A-Life NPC") and vx ~= nil and fx ~= nil then
+                            local dx, dy = b.x - vx, b.y - vy
+                            local across = math.abs(-dx * fy + dy * fx)
+                            if across > 1.35 then b.moving = false end
+                        end
+                        filtered[#filtered + 1] = b
+                    end
+                end
+                scene.bodies = filtered
+                return scene
+            end
+        end, "DrivingRoute.scene")
+    end
+    if type(p.DrivingRecovery) == "table" and type(p.DrivingRecovery.driveStall) == "function" then
+        A.wrap(p.DrivingRecovery, "driveStall", function(original)
+            return function(s, n, now)
+                if s ~= nil and type(n) == "table" and C.isCaravanVehicle(s.vehicle) and n.obstacle == nil then
+                    local t = now or A.now()
+                    local elapsed = t - (s.started or t)
+                    local speed = (p.DrivingDemo and type(p.DrivingDemo.speed) == "function" and p.DrivingDemo.speed(s.vehicle)) or 0
+                    local physicsOff = type(s.vehicle.isPhysicsActive) == "function" and s.vehicle:isPhysicsActive() == false
+                    if elapsed < 3500 or speed > 0.2 or physicsOff then
+                        n.driveProgress, n.driveStallMs, n.recoveryStop, n.retryProgress = nil, 0, nil, nil
+                        return false
+                    end
+                end
+                return original(s, n, now)
+            end
+        end, "DrivingRecovery.driveStall")
+    end
+    if type(p.DrivingEntry) == "table" and type(p.DrivingEntry.walked) == "function" then
+        A.wrap(p.DrivingEntry, "walked", function(original)
+            return function(s)
+                local arrived, err = original(s)
+                if not arrived and err ~= nil and type(s) == "table" and s.phase == "approach" and C.isCaravanVehicle(s.vehicle) then
+                    if type(s.walkAction) == "table" and s.walkAction.status == "cancelled" and (s.walkRetries or 0) < 3 and s.walkTarget ~= nil then
+                        s.walkRetries = (s.walkRetries or 0) + 1
+                        if p.DrivingDemo and type(p.DrivingDemo.stopActor) == "function" then pcall(p.DrivingDemo.stopActor, s) end
+                        pcall(p.DrivingEntry.walk, s, s.walkTarget)
+                        return false, nil
+                    end
+                end
+                return arrived, err
+            end
+        end, "DrivingEntry.walked")
+    end
+end
+
 function C.tickOne(group, position, now)
     local row = group[position]
     local id, entry, s = row.id, row.entry, row.s
@@ -307,6 +482,7 @@ function C.tickOne(group, position, now)
     if s.exitAt or s.exitRequested or s.detaching then return end
     local vehicle = s.vehicle
     if vehicle == nil then return end
+    C.ensureTuning(s)
     A.Physics.prepare(s, entry)
     if entry.halted then
         if s.phase == "driving" and not s.braking then C.stop(s, "caravan halted") end
@@ -318,13 +494,24 @@ function C.tickOne(group, position, now)
         entry.parkedAt = nil
         local cruise, full, factor = C.formationSpeed(group, position)
         C.applySpeed(s, cruise, full)
+        if factor < 1 then
+            s.lastProgressAt = now
+            if type(s.navigation) == "table" then
+                s.navigation.driveProgress, s.navigation.retryProgress = nil, nil
+                s.navigation.blockedSince, s.navigation.progressMark = nil, nil
+            end
+        end
         if position == 1 and entry.regrouping and now >= (entry.regroupSaidAt or 0) then
             entry.regroupSaidAt = now + 60000
             A.Lines.say(C.driverShell(s), "regroup", { uid = s.uid, cooldownMs = 60000 })
         end
-        if not s.braking and not s.appendPending and s.route ~= nil and #s.route <= C.lowQueue
+        local tail = s.route and s.route[#s.route] or nil
+        local vx, vy = A.xyz(vehicle)
+        local tailDist = (tail and vx ~= nil) and A.dist(vx, vy, tail.x, tail.y) or 0
+        if not s.braking and not s.appendPending and s.route ~= nil
+                and (#s.route == 0 or (#s.route <= C.lowQueue and tailDist <= 38))
                 and now >= (entry.nextScoutAt or 0) then
-            entry.nextScoutAt = now + 1500
+            entry.nextScoutAt = now + 600
             local points, info = C.legFor(entry, s)
             if points ~= nil then
                 local ok, err = C.extend(s, points)
@@ -361,7 +548,7 @@ function C.tickOne(group, position, now)
         local owner = C.owner()
         if owner ~= nil and owner.departures ~= nil and owner.departures[id] ~= nil then return end
         -- followers leave a little after the car ahead
-        local delay = (entry.threatState == "escape" and 1000 or C.restartDelayMs) + (position - 1) * 1500
+        local delay = (entry.threatState == "escape" and 800 or C.restartDelayMs) + (position - 1) * 1200
         if now - entry.parkedAt < delay then return end
         if entry.discardRoute then
             entry.discardRoute = nil
@@ -378,7 +565,7 @@ function C.tickOne(group, position, now)
             s.route = {} -- All queued points already reached; scout a real leg.
         end
         if now >= (entry.nextScoutAt or 0) then
-            entry.nextScoutAt = now + 2000
+            entry.nextScoutAt = now + 1000
             local points, info = C.legFor(entry, s, true)
             if points ~= nil then
                 entry.parkedAt = now
@@ -395,6 +582,7 @@ end
 
 function C.tick()
     if not A.drivingSide() then return end
+    C.installHooks()
     local now = A.now()
     if now < C.nextTickMs then return end
     C.nextTickMs = now + C.intervalMs

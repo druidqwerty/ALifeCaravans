@@ -72,9 +72,14 @@ return function(check)
     function v:clearPassenger(seat) self.seats[seat] = nil return true end
     function v:enterRSync(seat, chr, veh) self.seats[seat] = chr chr.vehicle = veh return true end
     function v:setCharacterPosition() end
+    local parkUpdates = 0
     function v:updatePhysics()
         if self.failPhysics then error("test physics error") end
         assert(self.seats[0] == nil or self.seats[0]:getMoodles() ~= nil, "bodiless driver must be unseated during updatePhysics")
+        if self.regulator == false and self.regulatorSpeed == 0 then
+            parkUpdates = parkUpdates + 1
+            return
+        end
         assert(self.force == 0 and self.power == 0 and self.regulator == true and self.regulatorSpeed > 0)
         physicsUpdates = physicsUpdates + 1
     end
@@ -89,6 +94,12 @@ return function(check)
     local function attempt() s.alcBrakeReleased = nil return A.Physics.prepare(s, entry) end
     check("verified local NPC drive clears native park brake in pure Lua",
         attempt() and physicsUpdates == 1 and v.force == 80 and v.power == 420 and v.regulator == false and v.stoplights == true)
+    v.isInvalidChunkAhead = function() return true end
+    v.isInvalidChunkBehind = function() return true end
+    check("unloaded distant chunk ahead/behind does not block local brake release",
+        attempt() and physicsUpdates == 2)
+    v.isInvalidChunkAhead, v.isInvalidChunkBehind = nil, nil
+    physicsUpdates = 1
     check("same drive does not repeatedly alter controller", not A.Physics.prepare(s, entry) and physicsUpdates == 1)
     entry.halted = true; check("halt never releases brakes", not attempt()); entry.halted = nil
     s.braking = true; check("braking session untouched", not attempt()); s.braking = nil
@@ -113,7 +124,8 @@ return function(check)
     check("missing updatePhysics declines without latch", not attempt() and not s.alcBrakeError)
     v.updatePhysics = savedUpdate
     s.phase = "seated"; s.alcBrakeReleased = true
-    check("parked session rearms next drive without touching physics", not A.Physics.prepare(s, entry) and not s.alcBrakeReleased)
+    check("parked session clears regulator gas state and rearms next drive",
+        not A.Physics.prepare(s, entry) and not s.alcBrakeReleased and parkUpdates == 1 and v.seats[0] == driver)
     s.phase = "driving"
     v.failPhysics = true
     check("updatePhysics failure restores brake and engine specs",

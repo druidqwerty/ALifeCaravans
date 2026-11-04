@@ -162,15 +162,13 @@ function F.releaseBrake(v, ridersAllowed)
         if not player or v:getNetPlayerId() ~= player:getOnlineID() then return false, "not_owner" end
     end
     if not v:isEngineRunning() then return false, "engine_off" end
-    if math.abs(v:getCurrentSpeedKmHour()) > 0.5 then return false, "moving" end
+    if math.abs(v:getCurrentSpeedKmHour()) > 1.8 then return false, "moving" end
     local driver = v:getDriver()
     if not driver or instanceof(driver, "IsoPlayer") or driver:isDead() or driver:getVehicle() ~= v then return false, "driver" end
     local data = driver:getModData()
     if not data or data.ProjectALifeUID == nil then return false, "driver_identity" end
     if A.vehicleHasPlayer(v) and not ridersAllowed then return false, "player_aboard" end
     if (type(v.getController) == "function" and v:getController() == nil)
-            or (type(v.isInvalidChunkAhead) == "function" and v:isInvalidChunkAhead())
-            or (type(v.isInvalidChunkBehind) == "function" and v:isInvalidChunkBehind())
             or type(v.updatePhysics) ~= "function" then return false, "physics" end
     local needUnseat = type(driver.getMoodles) == "function" and driver:getMoodles() == nil
     if needUnseat and (type(v.clearPassenger) ~= "function" or type(v.enterRSync) ~= "function") then
@@ -220,6 +218,38 @@ function F.releaseBrake(v, ridersAllowed)
     return true
 end
 
+function F.parkBrake(v, ridersAllowed)
+    if not v or isServer() or not v:isLocalPhysicSim() then return false end
+    if A.vehicleHasPlayer(v) and not ridersAllowed then return false end
+    if (type(v.getController) == "function" and v:getController() == nil)
+            or type(v.updatePhysics) ~= "function" then return false end
+    local driver = v:getDriver()
+    if driver ~= nil and instanceof(driver, "IsoPlayer") then return false end
+    local needUnseat = driver ~= nil and type(driver.getMoodles) == "function" and driver:getMoodles() == nil
+    if needUnseat and (type(v.clearPassenger) ~= "function" or type(v.enterRSync) ~= "function") then return false end
+    local reg = type(v.isRegulator) == "function" and v:isRegulator() or false
+    local regSpeed = type(v.getRegulatorSpeed) == "function" and v:getRegulatorSpeed() or 0
+    local rpm = type(v.getEngineSpeed) == "function" and v:getEngineSpeed() or nil
+    local unseated = false
+    pcall(function()
+        if needUnseat then
+            v:clearPassenger(0)
+            unseated = true
+        end
+        if type(v.setRegulator) == "function" then v:setRegulator(false) end
+        if type(v.setRegulatorSpeed) == "function" then v:setRegulatorSpeed(0) end
+        v:updatePhysics()
+    end)
+    if unseated and driver ~= nil and v:getDriver() ~= driver then
+        pcall(v.enterRSync, v, 0, driver, v)
+        if type(v.setCharacterPosition) == "function" then pcall(v.setCharacterPosition, v, driver, 0, "inside") end
+    end
+    if type(v.setRegulatorSpeed) == "function" then pcall(v.setRegulatorSpeed, v, regSpeed) end
+    if type(v.setRegulator) == "function" then pcall(v.setRegulator, v, reg) end
+    if rpm ~= nil and type(v.setEngineSpeed) == "function" then pcall(v.setEngineSpeed, v, rpm) end
+    return true
+end
+
 function F.prepare(s, entry)
     if not s or not entry or isServer() then return false end
     if not isClient() then F.ensureSP(s, entry) end
@@ -227,10 +257,39 @@ function F.prepare(s, entry)
             and s.vehicle and s.vehicle:getDriver() == nil then
         s.boardPrepared = nil
     end
-    if s.phase ~= "driving" then s.alcBrakeReleased, s.alcBrakeError, s.alcBrakeWhy = nil, nil, nil return false end
+    local v, npc = s.vehicle, s.npc
+    if s.phase ~= "driving" or entry.halted then
+        if s.alcBrakeReleased and v then pcall(F.parkBrake, v, F.ridersAllowed(v)) end
+        s.alcBrakeReleased, s.alcBrakeError, s.alcBrakeWhy, s.alcBrakeStallAt = nil, nil, nil, nil
+        return false
+    end
+    if v and not entry.halted and not s.braking and not s.exitAt and not s.exitRequested and not s.detaching then
+        if type(v.isPhysicsActive) == "function" and v:isPhysicsActive() == false then
+            local now = A.now()
+            s.terrainWaiting = true
+            s.lastProgressAt = now
+            if type(s.navigation) == "table" then
+                s.navigation.driveProgress, s.navigation.retryProgress = nil, nil
+                s.navigation.blockedSince, s.navigation.progressMark = nil, nil
+            end
+        end
+        if s.alcBrakeReleased and not s.alcBrakeError and not s.obstacleSince and not s.terrainWaiting then
+            local speed = type(v.getCurrentSpeedKmHour) == "function" and math.abs(v:getCurrentSpeedKmHour()) or 0
+            if (s.driveAcceleration or 0) > 1.5 and speed < 0.25 then
+                local now = A.now()
+                s.alcBrakeStallAt = s.alcBrakeStallAt or now
+                if now - s.alcBrakeStallAt >= 750 and (s.alcBrakeRetries or 0) < 3 then
+                    s.alcBrakeRetries = (s.alcBrakeRetries or 0) + 1
+                    s.alcBrakeReleased = nil
+                    s.alcBrakeStallAt = now
+                end
+            else
+                s.alcBrakeStallAt = nil
+            end
+        end
+    end
     if s.alcBrakeReleased or s.alcBrakeError or entry.halted or s.braking or s.exitAt or s.exitRequested
             or s.detaching or not s.entryComplete then return false end
-    local v, npc = s.vehicle, s.npc
     if not v or not npc or not A.Convoy or A.Convoy.known[v:getId()] ~= entry then return false end
     if A.Convoy.sessionFor(v:getId()) ~= s then return false end
     if not v:isLocalPhysicSim() then return false end
@@ -238,7 +297,7 @@ function F.prepare(s, entry)
         local player = getSpecificPlayer(0)
         if not player or v:getNetPlayerId() ~= player:getOnlineID() then return false end
     end
-    if math.abs(v:getCurrentSpeedKmHour()) > 0.5 or not v:isEngineRunning()
+    if math.abs(v:getCurrentSpeedKmHour()) > 1.8 or not v:isEngineRunning()
             or v:getDriver() ~= npc or npc:getVehicle() ~= v or npc:isDead()
             or instanceof(npc, "IsoPlayer") or not F.playersAllowed(v) then return false end
     local members = ProjectALife.DrivingDemo.members(s)

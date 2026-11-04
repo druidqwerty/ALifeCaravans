@@ -24,6 +24,18 @@ local A = ALifeCaravans
 local S = { pending = nil, installed = false, serial = 0, lastReason = nil, recrewSerial = 0 }
 A.Spawn = S
 
+function S.applyTuning(tuning, kmh)
+    if type(tuning) ~= "table" then return tuning end
+    tuning.speedKmh = kmh
+    tuning.reverseDelay = 2000
+    tuning.reverseRetryMs = 4000
+    tuning.reverseDistance = 2.5
+    tuning.steeringSlow = 0.4
+    tuning.precisionKmh = 16
+    tuning.returnKmh = 11
+    return tuning
+end
+
 local function P() return ProjectALife end
 
 function S.caravanFor(tag)
@@ -98,8 +110,7 @@ function S.install()
                 local kmh = tonumber(caravan.speedKmh) or A.settings.cruiseKmh
                 local T = p.DrivingTuning
                 if T ~= nil and type(T.copy) == "function" then
-                    local tuning = T.copy(old.tuning)
-                    tuning.speedKmh = kmh
+                    local tuning = S.applyTuning(T.copy(old.tuning), kmh)
                     old.tuning = tuning
                 end
                 old.speedKmh = kmh
@@ -227,10 +238,11 @@ function S.render(caravan, player, players, unit)
     local people = playersXY(players)
     local sites, points
     if unit == 1 then
-        local goal = caravan.goals and caravan.goals[caravan.goalIndex or 1] or nil
-        if goal == nil then return false, "no_goal" end
+        if caravan.goals == nil or caravan.goals[caravan.goalIndex or 1] == nil then return false, "no_goal" end
         local site, why = A.Roads.siteNear(scene, caravan.x, caravan.y, people, { radius = 36, minPlayer = A.settings.minSpawnDistance })
         if site == nil then return false, why end
+        local goal = A.Convoy.goalFor(caravan, site.x, site.y) or caravan.goals[#caravan.goals]
+        if goal == nil then return false, "no_goal" end
         local info
         points, info = A.Roads.scout(scene, site, goal, { maxPoints = 10 })
         if #points == 0 then return false, info.reason or "no_road" end
@@ -696,8 +708,7 @@ function S.recrew(caravan, vehicleId, route, limit, reserved)
         end
     end
     local T = p.DrivingTuning
-    local tuning = T.copy()
-    tuning.speedKmh = caravan.speedKmh
+    local tuning = S.applyTuning(T.copy(), caravan.speedKmh)
     S.recrewSerial = S.recrewSerial + 1
     local token = "alc-recrew:" .. tostring(vehicleId) .. ":" .. tostring(S.recrewSerial)
     local old = { player = player, systemArrival = true, tuning = tuning, speedKmh = caravan.speedKmh, cruiseSpeed = caravan.speedKmh / 3.6,

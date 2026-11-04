@@ -1,0 +1,79 @@
+Scenario-only evidence; isolated SP run 20261104_210709; pure-Lua 0.6.2 runtime.
+
+## Run 20261104_210709 — SOS
+PASS real convoy escape 113.19 tiles/30167ms; favor +3 once; duplicate denied
+scope=controlled real SP ambush/accept/boarding/driving/reward; attacker clearance scripted
+1793815705223,10588.000,10266.000,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793815707280,10588.000,10266.000,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793815709314,10588.000,10266.000,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793815711379,10588.000,10266.000,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793815713414,10588.000,10266.000,state=cover,ambush=fighting,driver=false,distance=0.00,coveredMs=0
+1793815715479,10588.000,10266.000,state=cover,ambush=boarding,driver=false,distance=0.00,coveredMs=0
+1793815717481,10588.000,10266.000,state=cover,ambush=none,driver=false,distance=0.00,coveredMs=0
+1793815719546,10588.000,10266.000,state=cover,ambush=none,driver=false,distance=0.00,coveredMs=0
+1793815721613,10588.000,10266.000,state=escape,ambush=none,driver=true,distance=0.00,coveredMs=0
+1793815723646,10587.898,10266.617,state=escape,ambush=none,driver=true,distance=0.32,coveredMs=2003
+1793815726146,10587.539,10269.320,state=escape,ambush=none,driver=true,distance=2.01,coveredMs=4032
+1793815728180,10587.438,10273.117,state=escape,ambush=none,driver=true,distance=5.11,coveredMs=6064
+1793815730216,10587.992,10278.297,state=escape,ambush=none,driver=true,distance=9.54,coveredMs=8064
+1793815732217,10588.797,10284.766,state=escape,ambush=none,driver=true,distance=15.35,coveredMs=10064
+1793815734247,10589.008,10292.828,state=escape,ambush=none,driver=true,distance=22.53,coveredMs=12064
+1793815736316,10588.461,10302.414,state=escape,ambush=none,driver=true,distance=31.10,coveredMs=14068
+1793815738816,10588.156,10316.023,state=escape,ambush=none,driver=true,distance=41.20,coveredMs=16106
+1793815740895,10588.484,10328.852,state=escape,ambush=none,driver=true,distance=52.78,coveredMs=18130
+1793815742980,10588.711,10343.484,state=escape,ambush=none,driver=true,distance=65.51,coveredMs=20132
+1793815745058,10588.562,10359.297,state=escape,ambush=none,driver=true,distance=79.61,coveredMs=22134
+1793815747180,10588.398,10375.852,state=escape,ambush=none,driver=true,distance=94.96,coveredMs=24135
+1793815749247,10588.430,10392.375,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815751279,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815753313,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815755346,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815757379,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815759414,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815761478,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815763513,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815765579,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815768079,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815770146,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815772214,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815774279,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815776312,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815778379,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815780478,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815782514,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815784579,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815787113,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815789145,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815791646,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815793679,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815795779,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815797812,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815799845,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815801846,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815803913,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815805979,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815808479,10588.469,10396.938,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815810979,10588.469,10397.117,state=escape,ambush=none,driver=true,distance=110.81,coveredMs=26164
+1793815812982,10588.625,10398.500,state=escape,ambush=none,driver=true,distance=111.32,coveredMs=28167
+
+## Run 20261104_210709 — Caravan audit
+PASS hail/trade/UI/timed stop; actual on-foot crew reboarded and drove 10.62 tiles
+scope=production hail/trade; inventory/UI; timed halt; observed spontaneous exit/reboard/depart
+1793815814413,hail,10589.16,10400.21,driver=true,session=driving,halted=nil
+1793815816546,ui,10589.30,10400.53,driver=true,session=seated,halted=true
+1793815818679,halt,10589.30,10400.53,driver=true,session=seated,halted=true
+1793815820812,halt,10589.30,10400.53,driver=true,session=seated,halted=true
+1793815822945,halt,10589.30,10400.53,driver=true,session=seated,halted=true
+1793815825082,depart,10589.39,10400.73,driver=true,session=driving,halted=nil
+1793815827212,depart,10590.02,10402.21,driver=true,session=driving,halted=nil
+1793815829348,depart,10590.84,10405.28,driver=true,session=driving,halted=nil
+1793815831478,depart,10590.88,10410.00,driver=true,session=driving,halted=nil
+1793815833612,reboard,10590.58,10412.10,driver=false,session=parking,halted=nil
+1793815835745,reboard,10590.58,10412.10,driver=false,session=nil,halted=nil
+1793815837881,reboard,10590.58,10412.10,driver=false,session=nil,halted=nil
+1793815840012,reboard,10590.58,10412.10,driver=false,session=approach,halted=nil
+1793815842145,reboard,10590.58,10412.10,driver=true,session=approach,halted=nil
+1793815844278,escape,10590.58,10412.09,driver=true,session=readywait,halted=nil
+1793815846413,escape,10590.48,10412.77,driver=true,session=driving,halted=nil
+1793815848548,escape,10590.20,10415.02,driver=true,session=driving,halted=nil
+1793815850679,escape,10589.99,10418.81,driver=true,session=driving,halted=nil

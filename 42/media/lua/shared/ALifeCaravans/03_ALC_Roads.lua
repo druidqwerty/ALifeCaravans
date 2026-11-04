@@ -33,6 +33,16 @@ function R.scene(player)
     return scene
 end
 
+function R.isLoaded(x, y)
+    if type(getCell) ~= "function" then return true end
+    local ok, loaded = pcall(function()
+        local cell = getCell()
+        if cell == nil or type(cell.getGridSquare) ~= "function" then return true end
+        return cell:getGridSquare(math.floor(x), math.floor(y), 0) ~= nil
+    end)
+    return not ok or loaded == true
+end
+
 function R.isRoad(scene, x, y)
     local S = sites()
     if S ~= nil and type(S.road) == "function" then
@@ -131,24 +141,44 @@ function R.siteNear(scene, x, y, players, options)
     return nil, "no free road tile near " .. tostring(math.floor(x)) .. "," .. tostring(math.floor(y))
 end
 
--- Compress a chain of 4-tile steps to bends plus one point every `spacing` tiles.
+-- Compress a chain of 4-tile steps to significant bends plus one point every `spacing` tiles.
+-- Avoids 4-tile staircase zig-zags and merges a short final tail stub into the last waypoint.
 function R.compress(chain, maxPoints, spacing)
     maxPoints = math.max(1, math.floor(tonumber(maxPoints) or 12))
     spacing = tonumber(spacing) or 14
+    local minBendSpacing = math.min(8, spacing * 0.5)
     local out = {}
     local anchor = chain[1]
     for index = 2, #chain do
         local previous, current, following = chain[index - 1], chain[index], chain[index + 1]
         local bend = following ~= nil and ((current.x - previous.x) * (following.y - current.y)
             ~= (current.y - previous.y) * (following.x - current.x))
+        local distFromAnchor = A.dist(current.x, current.y, anchor.x, anchor.y)
         local last = following == nil
-        if last or bend or A.dist(current.x, current.y, anchor.x, anchor.y) >= spacing then
+        if last then
+            if #out > 0 and distFromAnchor < math.max(6, spacing * 0.4) then
+                out[#out] = { x = current.x, y = current.y }
+            else
+                out[#out + 1] = { x = current.x, y = current.y }
+            end
+            break
+        elseif (bend and distFromAnchor >= minBendSpacing) or distFromAnchor >= spacing then
             out[#out + 1] = { x = current.x, y = current.y }
             anchor = current
             if #out >= maxPoints then break end
         end
     end
     return out
+end
+
+local function reversesRecentStep(node, dx, dy)
+    local anc, steps = node, 0
+    while anc ~= nil and steps < 4 do
+        if anc.dx ~= nil and (dx * anc.dx + dy * anc.dy) < 0 then return true end
+        anc = anc.parent
+        steps = steps + 1
+    end
+    return false
 end
 
 -- Waypoints from `from` toward `goal` over loaded road. Returns points (possibly
@@ -159,37 +189,87 @@ function R.scout(scene, from, goal, options)
     local budget = math.max(20, math.floor(options.maxNodes or 600))
     local maxPoints = options.maxPoints or 12
     local arrive = options.arrive or 8
+    local heading = type(options.heading) == "number" and options.heading or nil
+    local hx, hy = heading and math.cos(heading) or nil, heading and math.sin(heading) or nil
     local start = R.snapRoad(scene, from.x, from.y, options.snapRadius or 8)
     if start == nil then return {}, { reached = false, reason = "start is not on a loaded road", nodes = 0 } end
-    local root = { x = start.x, y = start.y, depth = 0, h = A.dist(start.x, start.y, goal.x, goal.y) }
-    local open, seen = { root }, { [root.x .. ":" .. root.y] = true }
-    local best, expanded = root, 0
+    local rootH = A.dist(start.x, start.y, goal.x, goal.y)
+    local root = { x = start.x, y = start.y, depth = 0, g = 0, h = rootH, f = rootH,
+        dx = hx and (hx * step) or nil, dy = hy and (hy * step) or nil }
+    local open, seen = { root }, { [root.x .. ":" .. root.y] = 0 }
+    local best, forwardBest, forwardScore, expanded = root, nil, math.huge, 0
+    local hitUnloaded = false
     local directions = { { step, 0 }, { 0, step }, { -step, 0 }, { 0, -step } }
     while #open > 0 and expanded < budget do
         local bestIndex = 1
         for index = 2, #open do
-            if open[index].h < open[bestIndex].h then bestIndex = index end
+            if open[index].f < open[bestIndex].f then bestIndex = index end
         end
         local node = table.remove(open, bestIndex)
         expanded = expanded + 1
-        if node.h < best.h or (node.h == best.h and node.depth > best.depth) then best = node end
+        if (node.backtrackPenalty or 0) == 0 or best == root then
+            if node.h < best.h or (node.h == best.h and node.depth > best.depth) then best = node end
+        end
+        if node.depth >= 3 then
+            local score = node.h - node.depth * step * 0.45 + (node.backtrackPenalty or 0)
+            if score < forwardScore then
+                forwardScore = score
+                forwardBest = node
+            end
+        end
         if node.h <= arrive then break end
         if node.depth < (options.maxDepth or 240) then
             for _, d in ipairs(directions) do
-                local n = { x = node.x + d[1], y = node.y + d[2], parent = node, depth = node.depth + 1 }
-                local key = n.x .. ":" .. n.y
-                if not seen[key] then
-                    seen[key] = true
-                    if R.link(scene, node, n) then
-                        n.h = A.dist(n.x, n.y, goal.x, goal.y)
-                        open[#open + 1] = n
+                if not reversesRecentStep(node, d[1], d[2]) then
+                    local nx, ny = node.x + d[1], node.y + d[2]
+                    local h = A.dist(nx, ny, goal.x, goal.y)
+                    if not R.isLoaded(nx, ny) then
+                        if h < node.h then hitUnloaded = true end
+                    else
+                        local turnCost = (node.dx ~= nil and (node.dx ~= d[1] or node.dy ~= d[2])) and 1.5 or 0
+                        local backPenalty = node.backtrackPenalty or 0
+                        local stepPenalty = 0
+                        if hx ~= nil and node.depth <= 2 then
+                            local dot = (d[1] * hx + d[2] * hy) / step
+                            if dot < -0.25 then
+                                stepPenalty = 24
+                                backPenalty = math.max(backPenalty, 24)
+                            elseif node.depth == 0 and dot < 0.2 then
+                                stepPenalty = 4
+                                backPenalty = math.max(backPenalty, 4)
+                            end
+                        end
+                        local g = (node.g or 0) + step + turnCost + stepPenalty
+                        local key = nx .. ":" .. ny
+                        if seen[key] == nil or g < seen[key] then
+                            if R.link(scene, node, { x = nx, y = ny }) then
+                                seen[key] = g
+                                open[#open + 1] = {
+                                    x = nx, y = ny, parent = node, depth = node.depth + 1,
+                                    dx = d[1], dy = d[2], g = g, h = h, f = g * 0.35 + h,
+                                    backtrackPenalty = backPenalty,
+                                }
+                            end
+                        end
                     end
                 end
             end
         end
     end
+    local chosen = best
+    if not hitUnloaded and chosen.h > arrive and ((rootH - chosen.h) < 12 or (chosen.backtrackPenalty or 0) >= 24)
+            and forwardBest ~= nil and forwardBest.depth > chosen.depth then
+        chosen = forwardBest
+    end
+    if not hitUnloaded and chosen == root and hx ~= nil and not options.noFallback then
+        local fallbackOpts = {}
+        for k, v in pairs(options) do fallbackOpts[k] = v end
+        fallbackOpts.heading = nil
+        fallbackOpts.noFallback = true
+        return R.scout(scene, from, goal, fallbackOpts)
+    end
     local chain = {}
-    local node = best
+    local node = chosen
     while node ~= nil do
         table.insert(chain, 1, { x = node.x, y = node.y })
         node = node.parent
@@ -197,7 +277,7 @@ function R.scout(scene, from, goal, options)
     local length = 0
     for index = 2, #chain do length = length + A.dist(chain[index].x, chain[index].y, chain[index - 1].x, chain[index - 1].y) end
     local points = #chain >= 2 and R.compress(chain, maxPoints, options.spacing) or {}
-    return points, { reached = best.h <= arrive, distance = best.h, nodes = expanded, length = length,
+    return points, { reached = chosen.h <= arrive, distance = chosen.h, nodes = expanded, length = length,
         reason = #points == 0 and "no road leads on from here" or nil }
 end
 

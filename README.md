@@ -8,7 +8,13 @@ Faction caravans for [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sh
 
 Free and open source. The code is developed with AI; direction, testing and time are mine. [Support the mods on Boosty](https://boosty.to/lrgpp).
 
-> **0.6.1 — pure-Lua vehicle physics, no ZombieBuddy required, and NPC crash-damage guard.** See [verification and limits](TEST_0.6.1.md).
+> **0.6.2 — smoother convoy driving without reverse loops, active roadside dismounts, and reliable reboarding.** See [verification and limits](TEST_0.6.2.md).
+
+## New in 0.6.2
+
+- **No more back-and-forth U-turn loops or sudden stalls on clear roads.** Road scouting now combines path cost and heading constraints, stops cleanly at unloaded chunk boundaries instead of detouring backward into loaded tiles, merges short tail stubs, and skips intermediate graph goals already passed or bypassed by road curves. Same-convoy vehicles and non-blocking roadside pedestrians no longer trigger reverse obstacle maneuvers, and convoy formation speed is no longer overwritten by upstream escape ticks.
+- **Reliable parked-brake release and true stopped state.** Distant unloaded chunks no longer block local wheel-brake release at departure; when a caravan car parks or halts, a pure-Lua `parkBrake` step clears the controller's regulator gas state (`isGasPedalPressed() == false`) and engages parking brake force so parked cars do not creep and `BaseVehicle:isStopped()` is accurate.
+- **Crews dismount for pinned combat and roadside stops, then re-board reliably.** When a caravan car is pinned by zombies (`>= 8s` without progress under contact), the crew dismounts to fight and automatically re-boards once clear. Roadside inspections, scavenging stops and friendly safehouse visits also dismount crews onto the road and queue immediate re-boarding on resume; cancelled approach walks retry automatically, and hailed caravans resume early if the player walks away.
 
 ## New in 0.6.1
 
@@ -49,7 +55,7 @@ Save/reload recovery also preserves a seated player instead of deadlocking the c
 
 ## Requirements and installation
 
-- **Project Zomboid Build 42.21** and **Project A-Life 1.4.6** are the verified target for 0.6.1. Keep A-Life Driving enabled. Later dependency/game versions require their own verification.
+- **Project Zomboid Build 42.21** and **Project A-Life 1.4.6** are the verified target for 0.6.2. Keep A-Life Driving enabled. Later dependency/game versions require their own verification.
 - [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sharedfiles/filedetails/?id=3803984183).
 - [A-Life: Factions Expanded](https://steamcommunity.com/sharedfiles/filedetails/?id=3813871509) is optional, but recommended for the full experience.
 - [Project A-Life – Jeem Extension](https://steamcommunity.com/sharedfiles/filedetails/?id=3806944055) is optional, but recommended for the full experience; its public palette integrates with the new windows.
@@ -70,9 +76,9 @@ Right-click within about 18 tiles of a caravan to interact. Trade and ride reque
 
 ## Verification
 
-[0.6.1 current-source report](TEST_0.6.1.md). Two-client MP evidence remains in [0.6.0](TEST_0.6.0.md) and passenger save/reload and driver replacement evidence in [0.5.0](TEST_0.5.0.md).
+[0.6.2 current-source report](TEST_0.6.2.md). Earlier verification remains in [0.6.1](TEST_0.6.1.md), two-client MP evidence in [0.6.0](TEST_0.6.0.md), and passenger save/reload and driver replacement evidence in [0.5.0](TEST_0.5.0.md).
 
-Developer checks: `python tools/run_test.py` (416 assertions) and `python tools/pz_loadcheck.py`.
+Developer checks: `python tools/run_test.py` (431 assertions) and `python tools/pz_loadcheck.py`.
 
 ## Current limits
 
