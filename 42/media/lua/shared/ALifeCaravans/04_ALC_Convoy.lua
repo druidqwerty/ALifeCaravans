@@ -19,6 +19,7 @@ require "ALifeCaravans/06_ALC_Physics"
 
 local A = ALifeCaravans
 local C = { known = {}, nextTickMs = 0, intervalMs = 300, goalReach = 22, lowQueue = 3, restartDelayMs = 2000,
+    tileCache = {}, bodyCache = nil, npcScanCache = nil, scoutedThisTick = false,
     formation = { fullGap = 16, stopGap = 7, regroupGap = 45, regroupDone = 25, regroupFactor = 0.5, crawl = 0.35 },
     stuck = { skipMs = 25000, rescoutMs = 60000, reportMs = 110000, moveTiles = 2.5 } }
 A.Convoy = C
@@ -321,7 +322,8 @@ function C.stuckTick(id, entry, s, now, blockedByPlayer, waitingOnConvoy)
     local x, y = A.xyz(s.vehicle)
     if x == nil then return end
     local st = entry.stuck
-    if st == nil or A.dist(x, y, st.x, st.y) >= C.stuck.moveTiles or s.braking or s.terrainWaiting or blockedByPlayer or waitingOnConvoy then
+    local physicsOff = type(s.vehicle.isPhysicsActive) == "function" and s.vehicle:isPhysicsActive() == false
+    if st == nil or A.dist(x, y, st.x, st.y) >= C.stuck.moveTiles or s.braking or s.terrainWaiting or s.alcPhysicsWaiting or physicsOff or blockedByPlayer or waitingOnConvoy then
         entry.stuck = { x = x, y = y, sinceMs = now, stage = 0 }
         return
     end
@@ -360,10 +362,11 @@ end
 
 function C.isCaravanVehicle(v)
     if v == nil or type(v.getId) ~= "function" then return false end
-    local ok, id = pcall(function() return v:getId() end)
+    local ok, id = pcall(v.getId, v)
     if ok and id ~= nil and C.known[id] ~= nil then return true, id, C.known[id] end
     local tag = A.vehicleTag(v)
     if tag ~= nil then return true, ok and id or nil, nil end
+    if A.Spawn and A.Spawn.pending ~= nil then return true, ok and id or nil, nil end
     return false
 end
 
@@ -376,6 +379,198 @@ function C.ensureTuning(s)
     s.tuning.steeringSlow = 0.4
     s.tuning.precisionKmh = 16
     s.tuning.returnKmh = 11
+    s.tuning.scanMs = 150
+    s.tuning.nodesPerTick = 16
+    s.tuning.searchBudgetMs = 2
+    s.tuning.maxNodes = 2400
+    s.tuning.horizon = 36
+    s.tuning.maxHorizon = 96
+end
+
+function C.sharedTiles(now, z)
+    local entry = C.tileCache[z]
+    if entry == nil or now >= entry.expiresAtMs then
+        entry = { squares = {}, edges = {}, expiresAtMs = now + 250 }
+        C.tileCache[z] = entry
+    end
+    return entry
+end
+
+local function collectALifeNpcs(p, cell, now)
+    local out, seen = {}, {}
+    local function addShell(shell)
+        if shell ~= nil and not seen[shell] then
+            seen[shell] = true
+            local dead = false
+            pcall(function() dead = shell:isDead() end)
+            if not dead then out[#out + 1] = shell end
+        end
+    end
+    local usedFastTable = false
+    if p.Watchdog and type(p.Watchdog.bindings) == "table" then
+        for _, b in pairs(p.Watchdog.bindings) do
+            usedFastTable = true
+            if type(b) == "table" then addShell(b.shell) end
+        end
+    end
+    if p.Executor and type(p.Executor.executed) == "table" then
+        for _, e in pairs(p.Executor.executed) do
+            usedFastTable = true
+            if type(e) == "table" then addShell(e.shell) end
+        end
+    end
+    if usedFastTable then return out end
+    local cache = C.npcScanCache
+    if cache ~= nil and now < cache.expiresAtMs then
+        for _, shell in ipairs(cache.shells) do addShell(shell) end
+        return out
+    end
+    local shells = {}
+    if cell ~= nil and type(cell.getZombieList) == "function" then
+        local ok, zombies = pcall(cell.getZombieList, cell)
+        if ok and zombies ~= nil and type(zombies.size) == "function" then
+            for i = 0, zombies:size() - 1 do
+                local actor = zombies:get(i)
+                local data = actor ~= nil and type(actor.getModData) == "function" and actor:getModData() or nil
+                if data and (data.ProjectALifeOwned or data.ProjectALifeActor or data.ProjectALifeUID) then
+                    shells[#shells + 1] = actor
+                    addShell(actor)
+                end
+            end
+        end
+    end
+    C.npcScanCache = { shells = shells, expiresAtMs = now + 400 }
+    return out
+end
+
+function C.cachedWorldBodies(now, bodyPadding)
+    local cache = C.bodyCache
+    if cache ~= nil and now < cache.expiresAtMs and cache.bodyPadding == bodyPadding then
+        return cache
+    end
+    local p = ProjectALife
+    local R = p and p.DrivingRoute
+    local cell = type(getCell) == "function" and getCell() or nil
+    local vehicles, pedestrians = {}, {}
+    if cell ~= nil and R ~= nil and type(R.dimensions) == "function" and type(cell.getVehicles) == "function" then
+        local ok, list = pcall(cell.getVehicles, cell)
+        local it = ok and list and type(list.iterator) == "function" and list:iterator() or nil
+        while it and it:hasNext() do
+            local other = it:next()
+            local ox, oy, oz = A.xyz(other)
+            if ox ~= nil then
+                local okId, oid = pcall(other.getId, other)
+                oid = okId and oid or nil
+                local otag = (oid and C.known[oid] and C.known[oid].caravanId) or A.vehicleTag(other)
+                local w, l = R.dimensions(other, bodyPadding)
+                local h = vehicleHeading(other)
+                local speed = nil
+                if p.DrivingProbe and type(p.DrivingProbe.read) == "function" then
+                    speed = p.DrivingProbe.read(other, "getCurrentSpeedKmHour")
+                elseif type(other.getCurrentSpeedKmHour) == "function" then
+                    local okSpd, val = pcall(other.getCurrentSpeedKmHour, other)
+                    if okSpd then speed = val end
+                end
+                vehicles[#vehicles + 1] = {
+                    obj = other, id = oid, caravanId = otag,
+                    x = ox, y = oy, z = oz or 0,
+                    w = w, l = l, heading = h,
+                    radius = math.sqrt(w * w + l * l),
+                    moving = speed == nil or math.abs(speed) > 0.5,
+                }
+            end
+        end
+    end
+    if p ~= nil then
+        for _, npc in ipairs(collectALifeNpcs(p, cell, now)) do
+            local inCar = nil
+            pcall(function() inCar = npc:getVehicle() end)
+            if inCar == nil then
+                local nx, ny, nz = A.xyz(npc)
+                if nx ~= nil then
+                    pedestrians[#pedestrians + 1] = { obj = npc, x = nx, y = ny, z = nz or 0, label = "A-Life NPC" }
+                end
+            end
+        end
+    end
+    for _, pl in ipairs(A.players()) do
+        local inCar = nil
+        pcall(function() inCar = pl:getVehicle() end)
+        if inCar == nil then
+            local px, py, pz = A.xyz(pl)
+            if px ~= nil then
+                pedestrians[#pedestrians + 1] = { obj = pl, x = px, y = py, z = pz or 0, label = "player" }
+            end
+        end
+    end
+    cache = { expiresAtMs = now + 150, bodyPadding = bodyPadding, vehicles = vehicles, pedestrians = pedestrians }
+    C.bodyCache = cache
+    return cache
+end
+
+function C.fastScene(v, tuning, id, entry)
+    local p = ProjectALife
+    local R = p and p.DrivingRoute
+    local T = p and p.DrivingTuning
+    local now = A.now()
+    local vx, vy, vz = A.xyz(v)
+    local z = math.floor(vz or 0)
+    local shared = C.sharedTiles(now, z)
+    local scene = { squares = shared.squares, edges = shared.edges, bodies = {}, z = z, padding = 0, tuning = tuning }
+    scene.bodyPadding = (T and type(T.value) == "function" and T.value(scene, "bodyPadding")) or 0.05
+    scene.vehicle = v
+    scene.halfWidth, scene.halfLength = R.dimensions(v, scene.bodyPadding)
+    local caravanId = (entry and entry.caravanId) or A.vehicleTag(v)
+        or (A.Spawn and A.Spawn.pending and A.Spawn.pending.caravan and A.Spawn.pending.caravan.id) or nil
+    local convoyPositions = {}
+    if caravanId ~= nil then
+        for otherId, otherEntry in pairs(C.known) do
+            if otherId ~= id and otherEntry.caravanId == caravanId then
+                local os = C.sessionFor(otherId)
+                local ov = (os and os.vehicle) or (type(getVehicleById) == "function" and getVehicleById(otherId)) or nil
+                local ox, oy = A.xyz(ov)
+                if ox ~= nil then convoyPositions[#convoyPositions + 1] = { x = ox, y = oy } end
+            end
+        end
+    end
+    local h = vehicleHeading(v)
+    local fx, fy = h and math.cos(h) or nil, h and math.sin(h) or nil
+    local world = C.cachedWorldBodies(now, scene.bodyPadding)
+    local bodies = scene.bodies
+    for _, row in ipairs(world.vehicles) do
+        if row.obj ~= v and (id == nil or row.id ~= id) and math.abs(row.z - (vz or 0)) <= 0.5 then
+            if not (caravanId ~= nil and row.caravanId == caravanId)
+                    and (vx == nil or A.dist(row.x, row.y, vx, vy) <= 72) then
+                local sameConvoy = false
+                for _, pos in ipairs(convoyPositions) do
+                    if A.dist(row.x, row.y, pos.x, pos.y) < 2.0 then sameConvoy = true break end
+                end
+                if not sameConvoy then
+                    bodies[#bodies + 1] = {
+                        x = row.x, y = row.y, radius = row.radius, label = "vehicle",
+                        moving = row.moving, heading = row.heading, w = row.w, l = row.l,
+                        boundRadius = row.heading and row.radius or row.radius * 1.4142135623730951,
+                    }
+                end
+            end
+        end
+    end
+    for _, row in ipairs(world.pedestrians) do
+        if row.obj ~= v and math.abs(row.z - (vz or 0)) <= 0.5
+                and (vx == nil or A.dist(row.x, row.y, vx, vy) <= 60) then
+            local moving = true
+            if vx ~= nil and fx ~= nil then
+                local dx, dy = row.x - vx, row.y - vy
+                local across = math.abs(-dx * fy + dy * fx)
+                if across > 1.35 then moving = false end
+            end
+            bodies[#bodies + 1] = {
+                x = row.x, y = row.y, radius = 0.5, label = row.label,
+                moving = moving, boundRadius = 0.5 * 1.4142135623730951,
+            }
+        end
+    end
+    return scene
 end
 
 function C.installHooks()
@@ -397,9 +592,14 @@ function C.installHooks()
     if type(p.DrivingRoute) == "table" and type(p.DrivingRoute.scene) == "function" then
         A.wrap(p.DrivingRoute, "scene", function(original)
             return function(v, tuning)
-                local scene = original(v, tuning)
                 local isCaravan, id, entry = C.isCaravanVehicle(v)
-                if not isCaravan or type(scene) ~= "table" or type(scene.bodies) ~= "table" then return scene end
+                if not isCaravan then return original(v, tuning) end
+                if type(p.DrivingRoute.dimensions) == "function" and type(getCell) == "function" then
+                    local ok, fast = pcall(C.fastScene, v, tuning, id, entry)
+                    if ok and type(fast) == "table" then return fast end
+                end
+                local scene = original(v, tuning)
+                if type(scene) ~= "table" or type(scene.bodies) ~= "table" then return scene end
                 local convoyPositions = {}
                 local caravanId = entry and entry.caravanId or A.vehicleTag(v)
                 if caravanId ~= nil then
@@ -439,6 +639,54 @@ function C.installHooks()
                 return scene
             end
         end, "DrivingRoute.scene")
+    end
+    if type(p.DrivingControl) == "table" and type(p.DrivingControl.apply) == "function" then
+        A.wrap(p.DrivingControl, "apply", function(original)
+            return function(s, heading, ax, ay, alpha, impulse)
+                if s ~= nil and C.isCaravanVehicle(s.vehicle) then
+                    if type(s.vehicle.isPhysicsActive) == "function" and s.vehicle:isPhysicsActive() == false then
+                        s.turnTorque = 0
+                        return
+                    end
+                    local accel = math.sqrt((ax or 0) * (ax or 0) + (ay or 0) * (ay or 0))
+                    local parkedOrWaiting = (s.phase == "seated" or s.braking or s.obstacleSince ~= nil)
+                        and math.abs(s.targetSpeed or 0) < 0.01
+                    if parkedOrWaiting then
+                        local speed = (p.DrivingDemo and type(p.DrivingDemo.speed) == "function" and p.DrivingDemo.speed(s.vehicle)) or 0
+                        if speed < 0.08 then
+                            s.turnTorque = 0
+                            return
+                        end
+                    end
+                    if accel < 0.015 and math.abs(alpha or 0) < 0.002 then
+                        s.turnTorque = 0
+                        return
+                    end
+                    if math.abs(alpha or 0) < 0.002 and type(impulse) == "function" then
+                        local count = 0
+                        local linearOnly = function(v, x, y, dx, dy, strength)
+                            count = count + 1
+                            if count == 1 then return impulse(v, x, y, dx, dy, strength) end
+                        end
+                        return original(s, heading, ax, ay, 0, linearOnly)
+                    end
+                end
+                return original(s, heading, ax, ay, alpha, impulse)
+            end
+        end, "DrivingControl.apply")
+    end
+    if type(p.DrivingDemoClient) == "table" and type(p.DrivingDemoClient.drive) == "function" then
+        A.wrap(p.DrivingDemoClient, "drive", function(original)
+            return function(s)
+                if s ~= nil and type(s.last) == "number" and C.isCaravanVehicle(s.vehicle) then
+                    local now = A.now()
+                    if now - s.last > 200 then
+                        s.last = now - 50
+                    end
+                end
+                return original(s)
+            end
+        end, "DrivingDemoClient.drive")
     end
     if type(p.DrivingRecovery) == "table" and type(p.DrivingRecovery.driveStall) == "function" then
         A.wrap(p.DrivingRecovery, "driveStall", function(original)
@@ -510,7 +758,8 @@ function C.tickOne(group, position, now)
         local tailDist = (tail and vx ~= nil) and A.dist(vx, vy, tail.x, tail.y) or 0
         if not s.braking and not s.appendPending and s.route ~= nil
                 and (#s.route == 0 or (#s.route <= C.lowQueue and tailDist <= 38))
-                and now >= (entry.nextScoutAt or 0) then
+                and not C.scoutedThisTick and now >= (entry.nextScoutAt or 0) then
+            C.scoutedThisTick = true
             entry.nextScoutAt = now + 600
             local points, info = C.legFor(entry, s)
             if points ~= nil then
@@ -564,7 +813,8 @@ function C.tickOne(group, position, now)
             end
             s.route = {} -- All queued points already reached; scout a real leg.
         end
-        if now >= (entry.nextScoutAt or 0) then
+        if not C.scoutedThisTick and now >= (entry.nextScoutAt or 0) then
+            C.scoutedThisTick = true
             entry.nextScoutAt = now + 1000
             local points, info = C.legFor(entry, s, true)
             if points ~= nil then
@@ -586,6 +836,7 @@ function C.tick()
     local now = A.now()
     if now < C.nextTickMs then return end
     C.nextTickMs = now + C.intervalMs
+    C.scoutedThisTick = false
     if A.Physics.sweepSP then A.Physics.sweepSP() end
     if ProjectALife == nil or ProjectALife.DrivingDemoClient == nil then return end
     for _, group in pairs(C.groups()) do

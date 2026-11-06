@@ -486,6 +486,10 @@ function D.tryRender(caravan, players, now)
     if rendered >= D.maxRendered or cars + math.min(2, #(caravan.vehicles or {})) > D.maxCars then return false end
     local row, distance = nearestPlayer(players, caravan.x, caravan.y)
     if row == nil or distance > A.settings.renderRadius or distance < A.settings.minSpawnDistance * 0.6 then return false end
+    if A.Roads and type(A.Roads.areaLoaded) == "function" and not A.Roads.areaLoaded(caravan.x, caravan.y, 36) then
+        caravan.nextRenderAtMs = now + 3000
+        return false
+    end
     D.renderCooldownUntilMs = now + 15000
     local ok, reason = A.Spawn.render(caravan, row.player, A.players(), 1)
     if ok then

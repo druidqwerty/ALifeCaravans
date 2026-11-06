@@ -33,14 +33,23 @@ function R.scene(player)
     return scene
 end
 
+local function checkSquareLoaded(cell, ix, iy)
+    return cell:getGridSquare(ix, iy, 0) ~= nil
+end
+
 function R.isLoaded(x, y)
     if type(getCell) ~= "function" then return true end
-    local ok, loaded = pcall(function()
-        local cell = getCell()
-        if cell == nil or type(cell.getGridSquare) ~= "function" then return true end
-        return cell:getGridSquare(math.floor(x), math.floor(y), 0) ~= nil
-    end)
+    local okCell, cell = pcall(getCell)
+    if not okCell or cell == nil or type(cell.getGridSquare) ~= "function" then return true end
+    local ok, loaded = pcall(checkSquareLoaded, cell, math.floor(x), math.floor(y))
     return not ok or loaded == true
+end
+
+function R.areaLoaded(x, y, radius)
+    if R.isLoaded(x, y) then return true end
+    local probe = math.min(24, math.max(8, math.floor((tonumber(radius) or 24) * 0.6)))
+    return R.isLoaded(x + probe, y) or R.isLoaded(x - probe, y)
+        or R.isLoaded(x, y + probe) or R.isLoaded(x, y - probe)
 end
 
 function R.isRoad(scene, x, y)
@@ -114,13 +123,17 @@ function R.siteNear(scene, x, y, players, options)
     options = options or {}
     local radius = math.floor(options.radius or 30)
     local minPlayer = options.minPlayer or A.settings.minSpawnDistance
-    local candidates = {}
     local cx, cy = tile(x), tile(y)
+    if not R.areaLoaded(cx, cy, radius) then
+        return nil, "spawn area not loaded near " .. tostring(math.floor(x)) .. "," .. tostring(math.floor(y))
+    end
+    local candidates = {}
     for dx = -radius, radius, 2 do
         for dy = -radius, radius, 2 do
             local px, py = cx + dx, cy + dy
             local d = dx * dx + dy * dy
-            if d <= radius * radius and R.farFromPlayers(players, px, py, minPlayer) and R.isRoad(scene, px, py) then
+            if d <= radius * radius and R.farFromPlayers(players, px, py, minPlayer)
+                    and R.isLoaded(px, py) and R.isRoad(scene, px, py) then
                 candidates[#candidates + 1] = { x = px, y = py, d = d }
             end
         end
@@ -130,10 +143,10 @@ function R.siteNear(scene, x, y, players, options)
         if a.x ~= b.x then return a.x < b.x end
         return a.y < b.y
     end)
-    local checked = 0
+    local checked, maxChecks = 0, math.floor(options.maxSpaceChecks or 64)
     for _, candidate in ipairs(candidates) do
         checked = checked + 1
-        if checked > 160 then break end
+        if checked > maxChecks then break end
         if R.space(scene, candidate.x, candidate.y, true) then
             return { x = candidate.x, y = candidate.y, z = 0 }
         end
@@ -181,12 +194,47 @@ local function reversesRecentStep(node, dx, dy)
     return false
 end
 
+local function nodeLess(a, b)
+    if a.f ~= b.f then return a.f < b.f end
+    return (a.seq or 0) < (b.seq or 0)
+end
+
+local function heapPush(heap, node)
+    local i = #heap + 1
+    while i > 1 do
+        local parent = math.floor(i / 2)
+        if not nodeLess(node, heap[parent]) then break end
+        heap[i] = heap[parent]
+        i = parent
+    end
+    heap[i] = node
+end
+
+local function heapPop(heap)
+    local first = heap[1]
+    local last = table.remove(heap)
+    if #heap > 0 then
+        local i, n = 1, #heap
+        while i * 2 <= n do
+            local child = i * 2
+            if child < n and nodeLess(heap[child + 1], heap[child]) then child = child + 1 end
+            if not nodeLess(heap[child], last) then break end
+            heap[i] = heap[child]
+            i = child
+        end
+        heap[i] = last
+    end
+    return first
+end
+
 -- Waypoints from `from` toward `goal` over loaded road. Returns points (possibly
 -- empty) and info { reached, distance, nodes, length, reason }.
 function R.scout(scene, from, goal, options)
     options = options or {}
     local step = math.max(2, math.floor(options.step or 4))
-    local budget = math.max(20, math.floor(options.maxNodes or 600))
+    local budget = math.max(20, math.floor(options.maxNodes or 240))
+    local maxMs = tonumber(options.maxMs) or 6
+    local startedMs = A.now()
     local maxPoints = options.maxPoints or 12
     local arrive = options.arrive or 8
     local heading = type(options.heading) == "number" and options.heading or nil
@@ -194,61 +242,73 @@ function R.scout(scene, from, goal, options)
     local start = R.snapRoad(scene, from.x, from.y, options.snapRadius or 8)
     if start == nil then return {}, { reached = false, reason = "start is not on a loaded road", nodes = 0 } end
     local rootH = A.dist(start.x, start.y, goal.x, goal.y)
-    local root = { x = start.x, y = start.y, depth = 0, g = 0, h = rootH, f = rootH,
+    local seq = 1
+    local root = { x = start.x, y = start.y, depth = 0, g = 0, h = rootH, f = rootH, seq = seq,
         dx = hx and (hx * step) or nil, dy = hy and (hy * step) or nil }
     local open, seen = { root }, { [root.x .. ":" .. root.y] = 0 }
-    local best, forwardBest, forwardScore, expanded = root, nil, math.huge, 0
+    local best, anyBest, forwardBest, forwardScore, anyForwardBest, anyForwardScore, expanded =
+        root, root, nil, math.huge, nil, math.huge, 0
     local hitUnloaded = false
     local directions = { { step, 0 }, { 0, step }, { -step, 0 }, { 0, -step } }
     while #open > 0 and expanded < budget do
-        local bestIndex = 1
-        for index = 2, #open do
-            if open[index].f < open[bestIndex].f then bestIndex = index end
+        if expanded > 0 and expanded % 16 == 0 and (A.now() - startedMs) >= maxMs
+                and (forwardBest ~= nil or best ~= root or anyBest ~= root) then
+            break
         end
-        local node = table.remove(open, bestIndex)
-        expanded = expanded + 1
-        if (node.backtrackPenalty or 0) == 0 or best == root then
-            if node.h < best.h or (node.h == best.h and node.depth > best.depth) then best = node end
-        end
-        if node.depth >= 3 then
-            local score = node.h - node.depth * step * 0.45 + (node.backtrackPenalty or 0)
-            if score < forwardScore then
-                forwardScore = score
-                forwardBest = node
+        local node = heapPop(open)
+        local keyHere = node.x .. ":" .. node.y
+        if seen[keyHere] == nil or node.g <= seen[keyHere] + 0.001 then
+            expanded = expanded + 1
+            if node.h < anyBest.h or (node.h == anyBest.h and node.depth > anyBest.depth) then anyBest = node end
+            if (node.backtrackPenalty or 0) == 0 or best == root then
+                if node.h < best.h or (node.h == best.h and node.depth > best.depth) then best = node end
             end
-        end
-        if node.h <= arrive then break end
-        if node.depth < (options.maxDepth or 240) then
-            for _, d in ipairs(directions) do
-                if not reversesRecentStep(node, d[1], d[2]) then
-                    local nx, ny = node.x + d[1], node.y + d[2]
-                    local h = A.dist(nx, ny, goal.x, goal.y)
-                    if not R.isLoaded(nx, ny) then
-                        if h < node.h then hitUnloaded = true end
-                    else
-                        local turnCost = (node.dx ~= nil and (node.dx ~= d[1] or node.dy ~= d[2])) and 1.5 or 0
-                        local backPenalty = node.backtrackPenalty or 0
-                        local stepPenalty = 0
-                        if hx ~= nil and node.depth <= 2 then
-                            local dot = (d[1] * hx + d[2] * hy) / step
-                            if dot < -0.25 then
-                                stepPenalty = 24
-                                backPenalty = math.max(backPenalty, 24)
-                            elseif node.depth == 0 and dot < 0.2 then
-                                stepPenalty = 4
-                                backPenalty = math.max(backPenalty, 4)
+            if node.depth >= 3 then
+                local score = node.h - node.depth * step * 0.45 + (node.backtrackPenalty or 0)
+                if score < forwardScore then
+                    forwardScore = score
+                    forwardBest = node
+                end
+                local rawScore = node.h - node.depth * step * 0.45
+                if rawScore < anyForwardScore then
+                    anyForwardScore = rawScore
+                    anyForwardBest = node
+                end
+            end
+            if node.h <= arrive then break end
+            if node.depth < (options.maxDepth or 240) then
+                for _, d in ipairs(directions) do
+                    if not reversesRecentStep(node, d[1], d[2]) then
+                        local nx, ny = node.x + d[1], node.y + d[2]
+                        local h = A.dist(nx, ny, goal.x, goal.y)
+                        if not R.isLoaded(nx, ny) then
+                            if h < node.h then hitUnloaded = true end
+                        else
+                            local turnCost = (node.dx ~= nil and (node.dx ~= d[1] or node.dy ~= d[2])) and 1.5 or 0
+                            local backPenalty = node.backtrackPenalty or 0
+                            local stepPenalty = 0
+                            if hx ~= nil and node.depth <= 2 then
+                                local dot = (d[1] * hx + d[2] * hy) / step
+                                if dot < -0.25 then
+                                    stepPenalty = 24
+                                    backPenalty = math.max(backPenalty, 24)
+                                elseif node.depth == 0 and dot < 0.2 then
+                                    stepPenalty = 4
+                                    backPenalty = math.max(backPenalty, 4)
+                                end
                             end
-                        end
-                        local g = (node.g or 0) + step + turnCost + stepPenalty
-                        local key = nx .. ":" .. ny
-                        if seen[key] == nil or g < seen[key] then
-                            if R.link(scene, node, { x = nx, y = ny }) then
-                                seen[key] = g
-                                open[#open + 1] = {
-                                    x = nx, y = ny, parent = node, depth = node.depth + 1,
-                                    dx = d[1], dy = d[2], g = g, h = h, f = g * 0.35 + h,
-                                    backtrackPenalty = backPenalty,
-                                }
+                            local g = (node.g or 0) + step + turnCost + stepPenalty
+                            local key = nx .. ":" .. ny
+                            if seen[key] == nil or g < seen[key] then
+                                if R.link(scene, node, { x = nx, y = ny }) then
+                                    seen[key] = g
+                                    seq = seq + 1
+                                    heapPush(open, {
+                                        x = nx, y = ny, parent = node, depth = node.depth + 1,
+                                        dx = d[1], dy = d[2], g = g, h = h, f = g * 0.35 + h,
+                                        backtrackPenalty = backPenalty, seq = seq,
+                                    })
+                                end
                             end
                         end
                     end
@@ -261,12 +321,20 @@ function R.scout(scene, from, goal, options)
             and forwardBest ~= nil and forwardBest.depth > chosen.depth then
         chosen = forwardBest
     end
-    if not hitUnloaded and chosen == root and hx ~= nil and not options.noFallback then
-        local fallbackOpts = {}
-        for k, v in pairs(options) do fallbackOpts[k] = v end
-        fallbackOpts.heading = nil
-        fallbackOpts.noFallback = true
-        return R.scout(scene, from, goal, fallbackOpts)
+    if not hitUnloaded and chosen == root and hx ~= nil then
+        if anyBest ~= root then
+            chosen = anyBest
+            if chosen.h > arrive and (rootH - chosen.h) < 12
+                    and anyForwardBest ~= nil and anyForwardBest.depth > chosen.depth then
+                chosen = anyForwardBest
+            end
+        elseif not options.noFallback then
+            local fallbackOpts = {}
+            for k, v in pairs(options) do fallbackOpts[k] = v end
+            fallbackOpts.heading = nil
+            fallbackOpts.noFallback = true
+            return R.scout(scene, from, goal, fallbackOpts)
+        end
     end
     local chain = {}
     local node = chosen

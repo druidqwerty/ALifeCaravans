@@ -26,13 +26,24 @@ function F.playersAllowed(v)
 end
 
 function F.wakeSP(v, npc, driving, s)
+    local asleep = type(v.isPhysicsActive) == "function" and v:isPhysicsActive() == false
     if not driving or v:getDriver() ~= npc or npc:getVehicle() ~= v
-            or not v:isEngineRunning() or math.abs(v:getCurrentSpeedKmHour()) > 0.5 then return false end
-    if s and s.alcWokeSP and (type(v.isPhysicsActive) ~= "function" or v:isPhysicsActive() == true) then return true end
+            or not v:isEngineRunning() or (not asleep and math.abs(v:getCurrentSpeedKmHour()) > 0.5) then return false end
+    local vx, vy = A.xyz(v)
+    local movedChunk = s and vx ~= nil and s.alcWokeSP and (s.alcChunkX == nil or A.dist(vx, vy, s.alcChunkX, s.alcChunkY) >= 5.5)
+    if s and s.alcWokeSP and not asleep and not movedChunk then return true end
+    if asleep and s and s.alcWokeSP then
+        local now = A.now()
+        if now < (s.alcWakeRetryAt or 0) then return false end
+        s.alcWakeRetryAt = now + 1000
+    end
     if type(v.checkSurroundingChunks) == "function" then v:checkSurroundingChunks() end
-    if type(v.setPhysicsActive) == "function" then
-        if type(v.isPhysicsActive) == "function" and v:isPhysicsActive() then v:setPhysicsActive(false) end
-        v:setPhysicsActive(true)
+    if s and vx ~= nil then s.alcChunkX, s.alcChunkY = vx, vy end
+    if not s or not s.alcWokeSP or asleep then
+        if type(v.setPhysicsActive) == "function" then
+            if type(v.isPhysicsActive) == "function" and v:isPhysicsActive() then v:setPhysicsActive(false) end
+            v:setPhysicsActive(true)
+        end
     end
     local active = type(v.isPhysicsActive) ~= "function" or v:isPhysicsActive() == true
     if s then s.alcWokeSP = active or nil end
@@ -266,14 +277,16 @@ function F.prepare(s, entry)
     if v and not entry.halted and not s.braking and not s.exitAt and not s.exitRequested and not s.detaching then
         if type(v.isPhysicsActive) == "function" and v:isPhysicsActive() == false then
             local now = A.now()
-            s.terrainWaiting = true
+            s.alcPhysicsWaiting = true
             s.lastProgressAt = now
             if type(s.navigation) == "table" then
                 s.navigation.driveProgress, s.navigation.retryProgress = nil, nil
                 s.navigation.blockedSince, s.navigation.progressMark = nil, nil
             end
+        else
+            s.alcPhysicsWaiting = nil
         end
-        if s.alcBrakeReleased and not s.alcBrakeError and not s.obstacleSince and not s.terrainWaiting then
+        if s.alcBrakeReleased and not s.alcBrakeError and not s.obstacleSince and not s.terrainWaiting and not s.alcPhysicsWaiting then
             local speed = type(v.getCurrentSpeedKmHour) == "function" and math.abs(v:getCurrentSpeedKmHour()) or 0
             if (s.driveAcceleration or 0) > 1.5 and speed < 0.25 then
                 local now = A.now()

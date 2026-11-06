@@ -33,6 +33,12 @@ function S.applyTuning(tuning, kmh)
     tuning.steeringSlow = 0.4
     tuning.precisionKmh = 16
     tuning.returnKmh = 11
+    tuning.scanMs = 150
+    tuning.nodesPerTick = 16
+    tuning.searchBudgetMs = 2
+    tuning.maxNodes = 2400
+    tuning.horizon = 36
+    tuning.maxHorizon = 96
     return tuning
 end
 
@@ -789,14 +795,25 @@ end
 -- Zombies (not A-Life NPCs) within `radius` of (x, y).
 function S.zombiesNear(x, y, radius)
     local count = 0
+    local minX, maxX = x - radius, x + radius
+    local minY, maxY = y - radius, y + radius
+    local r2 = radius * radius
     pcall(function()
         local list = getCell():getZombieList()
         for index = 0, list:size() - 1 do
             local zombie = list:get(index)
-            local zx, zy = A.xyz(zombie)
-            if zx ~= nil and not zombie:isDead() and A.dist(zx, zy, x, y) <= radius then
-                local data = zombie:getModData()
-                if not (data and data.ProjectALifeOwned == true) then count = count + 1 end
+            if zombie ~= nil then
+                local zx = zombie:getX()
+                if type(zx) == "number" and zx >= minX and zx <= maxX then
+                    local zy = zombie:getY()
+                    if type(zy) == "number" and zy >= minY and zy <= maxY then
+                        local dx, dy = zx - x, zy - y
+                        if dx * dx + dy * dy <= r2 and not zombie:isDead() then
+                            local data = zombie:getModData()
+                            if not (data and data.ProjectALifeOwned == true) then count = count + 1 end
+                        end
+                    end
+                end
             end
         end
     end)

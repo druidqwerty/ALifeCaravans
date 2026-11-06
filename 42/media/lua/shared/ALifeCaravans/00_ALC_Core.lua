@@ -8,7 +8,7 @@ ALifeCaravans = ALifeCaravans or {}
 local A = ALifeCaravans
 
 A.MOD_ID = "ALifeCaravans"
-A.VERSION = "0.6.2"
+A.VERSION = "0.6.3"
 A.TAG = "[ALC]"
 A.MODULE = "ALifeCaravans"        -- client<->server command module name
 A.MODDATA_ID = "ALifeCaravanId"   -- vehicle ModData key (authoritative side only)
@@ -126,9 +126,13 @@ function A.drivingSide()
     return A.side() ~= "server"
 end
 
+local function readXYZ(body)
+    return body:getX(), body:getY(), body:getZ()
+end
+
 function A.xyz(body)
     if body == nil or type(body.getX) ~= "function" then return nil end
-    local ok, x, y, z = pcall(function() return body:getX(), body:getY(), body:getZ() end)
+    local ok, x, y, z = pcall(readXYZ, body)
     if not ok or type(x) ~= "number" or type(y) ~= "number" then return nil end
     return x, y, type(z) == "number" and z or 0
 end
@@ -244,12 +248,15 @@ function A.tagVehicle(vehicle, caravanId, index)
     return ok
 end
 
+local function readVehicleTag(vehicle)
+    local data = vehicle:getModData()
+    if data == nil then return nil end
+    return data[A.MODDATA_ID], data.ALifeCaravanIndex
+end
+
 function A.vehicleTag(vehicle)
     if vehicle == nil or type(vehicle.getModData) ~= "function" then return nil end
-    local ok, id, index = pcall(function()
-        local data = vehicle:getModData()
-        return data[A.MODDATA_ID], data.ALifeCaravanIndex
-    end)
+    local ok, id, index = pcall(readVehicleTag, vehicle)
     if ok and type(id) == "string" then return id, index end
     return nil
 end

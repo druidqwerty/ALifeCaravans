@@ -6,25 +6,52 @@ A.Threats = T
 
 function T.scan(cars)
     local result = {near=0, contact=0, closest=math.huge}
+    if type(cars) ~= "table" or #cars == 0 then return result end
     local cell = type(getCell) == "function" and getCell()
     local zombies = cell and cell:getZombieList()
     if not zombies then return result end
+    local minX, maxX = math.huge, -math.huge
+    local minY, maxY = math.huge, -math.huge
+    local carRows = {}
+    for _, row in ipairs(cars) do
+        local rx, ry = row.x, row.y
+        if rx ~= nil and ry ~= nil then
+            local _, _, cz = A.xyz(row.vehicle)
+            local fz = math.floor(cz or 0)
+            carRows[#carRows + 1] = { x = rx, y = ry, z = fz }
+            if rx - 8 < minX then minX = rx - 8 end
+            if rx + 8 > maxX then maxX = rx + 8 end
+            if ry - 8 < minY then minY = ry - 8 end
+            if ry + 8 > maxY then maxY = ry + 8 end
+        end
+    end
+    if #carRows == 0 then return result end
     for i=0,zombies:size()-1 do
         local zombie = zombies:get(i)
-        local data = zombie:getModData()
-        if not zombie:isDead() and not (data and data.ProjectALifeOwned == true) then
-            local x,y,z = A.xyz(zombie)
-            local distance = math.huge
-            for _, row in ipairs(cars) do
-                local _,_,cz = A.xyz(row.vehicle)
-                if x and math.floor(z or 0)==math.floor(cz or 0) then
-                    distance = math.min(distance,A.dist(x,y,row.x,row.y))
+        if zombie ~= nil then
+            local x = zombie:getX()
+            if type(x) == "number" and x >= minX and x <= maxX then
+                local y = zombie:getY()
+                if type(y) == "number" and y >= minY and y <= maxY and not zombie:isDead() then
+                    local data = zombie:getModData()
+                    if not (data and data.ProjectALifeOwned == true) then
+                        local fz = math.floor((type(zombie.getZ) == "function" and zombie:getZ()) or 0)
+                        local minD2 = math.huge
+                        for _, c in ipairs(carRows) do
+                            if fz == c.z then
+                                local dx, dy = x - c.x, y - c.y
+                                local d2 = dx * dx + dy * dy
+                                if d2 < minD2 then minD2 = d2 end
+                            end
+                        end
+                        if minD2 <= 64 then
+                            local distance = math.sqrt(minD2)
+                            result.near = result.near + 1
+                            if distance < result.closest then result.closest = distance end
+                            if distance <= 2.5 then result.contact = result.contact + 1 end
+                        end
+                    end
                 end
-            end
-            if distance <= 8 then
-                result.near = result.near+1
-                result.closest = math.min(result.closest,distance)
-                if distance <= 2.5 then result.contact=result.contact+1 end
             end
         end
     end

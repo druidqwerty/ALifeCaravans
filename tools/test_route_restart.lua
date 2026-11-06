@@ -122,6 +122,109 @@ return function(check,newVehicle)
     local arrived, walkErr = p.DrivingEntry.walked(s1)
     check("DrivingEntry.walked retries cancelled approach walk instead of aborting boarding",
         arrived == false and walkErr == nil and s1.walkRetries == 1 and s1.walkAction.status == "running")
+
+    -- 0.6.3 performance regressions: fastScene cache (no zombie-list scan, shared tiles),
+    -- impulse suppression, frame-spike dt clamp, bounding-box zombie filter, unloaded tryRender guard.
+    local modDataCalls = 0
+    local oldZombies = ZOMBIES
+    ZOMBIES = {}
+    for idx = 1, 500 do
+        local zx = 300 + (idx % 50)
+        ZOMBIES[idx] = {
+            getX = function() return zx end,
+            getY = function() return 300 end,
+            getZ = function() return 0 end,
+            isDead = function() modDataCalls = modDataCalls + 1 return false end,
+            getModData = function() modDataCalls = modDataCalls + 1 return {} end,
+        }
+    end
+    local savedWatchdog = p.Watchdog
+    local savedControl = p.DrivingControl
+    local savedDrive = p.DrivingDemoClient.drive
+    local npcShell = newShell("perf-npc", "f_army")
+    npcShell.x, npcShell.y = 104, 102.5
+    p.Watchdog = { bindings = { ["perf-npc"] = { shell = npcShell } } }
+    p.DrivingRoute.dimensions = function() return 0.9, 2.2 end
+    local impulseCalls = 0
+    p.DrivingControl = {
+        apply = function(s, h, ax, ay, alpha, imp)
+            imp(s.vehicle, 0, 0, ax, ay, 10)
+            imp(s.vehicle, 1, 0, 0, 1, 5)
+            imp(s.vehicle, -1, 0, 0, -1, 5)
+        end,
+    }
+    local observedDt = nil
+    p.DrivingDemoClient.drive = function(s) observedDt = (A.now() - s.last) / 1000 end
+    C.hooksInstalled = nil
+    C.bodyCache, C.tileCache = nil, {}
+    for _, k in ipairs({ "DrivingEscape.tick", "DrivingRoute.scene", "DrivingRecovery.driveStall",
+            "DrivingEntry.walked", "DrivingControl.apply", "DrivingDemoClient.drive" }) do
+        A.wrapped[k] = nil
+    end
+    C.installHooks()
+    local fast1 = p.DrivingRoute.scene(c1, {})
+    local fast2 = p.DrivingRoute.scene(c2, {})
+    check("fastScene skips getZombieList when Watchdog.bindings is present", modDataCalls == 0, modDataCalls)
+    check("fastScene shares squares and edges cache across convoy cars in 250ms window",
+        fast1.squares == fast2.squares and fast1.edges == fast2.edges)
+    check("fastScene includes nearby active A-Life NPCs and excludes same-convoy cars", (function()
+        local hasNpc, hasSameConvoy = false, false
+        for _, b in ipairs(fast1.bodies) do
+            if b.label == "A-Life NPC" then hasNpc = true end
+            if b.label == "vehicle" and math.abs(b.x - 195) < 1 then hasSameConvoy = true end
+        end
+        return hasNpc and not hasSameConvoy
+    end)())
+
+    -- Bounding-box pre-filter in Threats.scan and Spawn.zombiesNear
+    local threatRes = A.Threats.scan({ { x = 100, y = 100, vehicle = c1 } })
+    local nearCount = A.Spawn.zombiesNear(100, 100, 18)
+    check("Threats.scan and Spawn.zombiesNear skip getModData/isDead on far zombies outside bounding box",
+        modDataCalls == 0 and threatRes.near == 0 and nearCount == 0, modDataCalls)
+
+    -- Impulse suppression: parked/coasting = 0 impulses, straight accel = 1 impulse, turn = 3 impulses
+    local rawImpulse = function() impulseCalls = impulseCalls + 1 end
+    p.DrivingControl.apply({ vehicle = c1, phase = "seated", targetSpeed = 0 }, 0, 0.2, 0, 0.001, rawImpulse)
+    check("parked caravan car suppresses idle impulses", impulseCalls == 0, impulseCalls)
+    p.DrivingControl.apply({ vehicle = c1, phase = "driving", targetSpeed = 8 }, 0, 0.005, 0.005, 0.001, rawImpulse)
+    check("coasting caravan car suppresses micro impulses", impulseCalls == 0, impulseCalls)
+    p.DrivingControl.apply({ vehicle = c1, phase = "driving", targetSpeed = 8 }, 0, 2.0, 0, 0.001, rawImpulse)
+    check("straight-accelerating caravan car applies only 1 linear impulse instead of 3", impulseCalls == 1, impulseCalls)
+    impulseCalls = 0
+    p.DrivingControl.apply({ vehicle = c1, phase = "driving", targetSpeed = 8 }, 0, 2.0, 0, 0.25, rawImpulse)
+    check("turning caravan car applies all 3 impulses", impulseCalls == 3, impulseCalls)
+
+    -- Frame-spike dt clamp in DrivingDemoClient.drive
+    local lagSession = { vehicle = c1, last = CLOCK - 800 }
+    p.DrivingDemoClient.drive(lagSession)
+    check("DrivingDemoClient.drive clamps frame spike dt to 0.05s for caravan cars",
+        observedDt ~= nil and math.abs(observedDt - 0.05) < 0.001, observedDt)
+
+    -- Unloaded spawn area fast-fail without renderFailures penalty
+    local unCaravan = {
+        id = "unloaded-probe", state = "offline", x = 600, y = 100,
+        vehicles = { "Base.CarNormal" }, crew = { "f_army_p1", "f_army_p2" },
+        goals = { { x = 650, y = 100 } }, goalIndex = 1, renderFailures = 0, nextRenderAtMs = 0,
+    }
+    local oldRadius, oldMaxR, oldMaxC = A.settings.renderRadius, A.Director.maxRendered, A.Director.maxCars
+    A.settings.renderRadius = 700
+    A.Director.maxRendered, A.Director.maxCars = 99, 99
+    A.Director.renderCooldownUntilMs = 0
+    local tryOk = A.Director.tryRender(unCaravan, { { x = 20, y = 100, key = "ivan", player = PLAYER } }, CLOCK)
+    check("tryRender defers unloaded spawn area without incrementing renderFailures",
+        tryOk == false and unCaravan.renderFailures == 0 and unCaravan.nextRenderAtMs == CLOCK + 3000)
+    A.settings.renderRadius, A.Director.maxRendered, A.Director.maxCars = oldRadius, oldMaxR, oldMaxC
+
+    -- Tuning budget fields
+    local tuned = A.Spawn.applyTuning({}, 35)
+    check("applyTuning sets lighter scanMs/nodesPerTick/searchBudgetMs/maxNodes",
+        tuned.scanMs == 150 and tuned.nodesPerTick == 16 and tuned.searchBudgetMs == 2 and tuned.maxNodes == 2400)
+
+    ZOMBIES = oldZombies
+    p.DrivingRoute.dimensions = nil
+    p.Watchdog = savedWatchdog
+    p.DrivingControl = savedControl
+    p.DrivingDemoClient.drive = savedDrive
     C.known = oldKnown2
     p.DrivingEscape, p.DrivingRoute.scene, p.DrivingRecovery, p.DrivingEntry = savedEscape, savedScene, savedStall, savedWalked
 end
