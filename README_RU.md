@@ -1,6 +1,6 @@
 # A-Life: Caravans [B42]
 
-<p align="center"><a href="https://boosty.to/lrgpp"><img src="docs/banner.png" alt="Моды LrgPP на Boosty" width="640"></a></p>
+<p align="center"><a href="https://boosty.to/lrgpp"><img src="https://raw.githubusercontent.com/druidqwerty/ALifeCaravans/1858d2be2573d322611113e4dd056945862a136b/docs/banner.png" alt="Моды LrgPP на Boosty" width="640"></a></p>
 
 Караваны фракций для [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sharedfiles/filedetails/?id=3803984183) от Vice. Вдали от игроков колонны идут между городами по сохраняемому журналу; рядом появляются настоящие машины с водителями и пассажирами-NPC. Догоняйте, останавливайте, торгуйте, ездите попутчиком или помогайте выйти из засады.
 

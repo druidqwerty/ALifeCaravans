@@ -1,6 +1,6 @@
 # A-Life: Caravans [B42]
 
-<p align="center"><a href="https://boosty.to/lrgpp"><img src="docs/banner.png" alt="LrgPP mods on Boosty" width="640"></a></p>
+<p align="center"><a href="https://boosty.to/lrgpp"><img src="https://raw.githubusercontent.com/druidqwerty/ALifeCaravans/1858d2be2573d322611113e4dd056945862a136b/docs/banner.png" alt="LrgPP mods on Boosty" width="640"></a></p>
 
 Faction caravans for [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sharedfiles/filedetails/?id=3803984183) by Vice. Far from players, convoys travel between towns in a persistent ledger; nearby, they become real cars with NPC drivers and passengers. Catch up, flag them down, trade, ride along or help them escape an ambush.
 
