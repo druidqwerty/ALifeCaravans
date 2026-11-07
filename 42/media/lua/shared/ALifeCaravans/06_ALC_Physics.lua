@@ -82,14 +82,84 @@ function F.acquireSP(v, npc, caravanId, uid, generation, ridersAllowed, driving,
     return true
 end
 
+function F.isSeatedInVehicle(body, v)
+    if not body then return false, nil, nil end
+    local car, seat = nil, nil
+    pcall(function()
+        if type(body.getVehicle) == "function" then car = body:getVehicle() end
+        if car ~= nil and type(car.getSeat) == "function" then seat = car:getSeat(body) end
+    end)
+    if car ~= nil then return true, car, seat end
+    if v ~= nil then
+        local foundSeat = nil
+        pcall(function()
+            local seats = type(v.getMaxPassengers) == "function" and v:getMaxPassengers() or 0
+            for s = 0, math.max(0, seats - 1) do
+                if type(v.getCharacter) == "function" and v:getCharacter(s) == body then
+                    foundSeat = s
+                    break
+                end
+            end
+        end)
+        if foundSeat ~= nil then return true, v, foundSeat end
+    end
+    return false, nil, nil
+end
+
 function F.syncBodyCrashGuard(body, v, active)
     if not body or instanceof(body, "IsoPlayer") or type(body.setGodMod) ~= "function" then return end
     local noBodyDamage = type(body.getBodyDamage) ~= "function" or body:getBodyDamage() == nil
     if not noBodyDamage then return end
-    local inCar = false
-    pcall(function() inCar = v ~= nil and body:getVehicle() == v and not body:isDead() end)
-    local guard = active ~= false and inCar
-    pcall(body.setGodMod, body, guard, true)
+    local inCar, car, seat = F.isSeatedInVehicle(body, v)
+    local dead = false
+    pcall(function() dead = type(body.isDead) == "function" and body:isDead() == true end)
+    if inCar and dead then
+        -- Java's setGodMod(true, true) is a no-op when isDead() is true, whereas
+        -- setInvulnerable(true) calls setGodModCheat(true) unconditionally, and
+        -- BaseVehicle.damagePlayers does not check isDead(). Eject dead bodiless
+        -- occupants immediately (and fallback to setInvulnerable if still seated).
+        pcall(function()
+            if car ~= nil and type(car.exitRSync) == "function" and type(body.getVehicle) == "function" and body:getVehicle() == car then
+                car:exitRSync(body)
+            end
+            if car ~= nil and type(car.clearPassenger) == "function" then
+                if seat ~= nil and seat >= 0 and (type(car.getCharacter) ~= "function" or car:getCharacter(seat) == body) then
+                    car:clearPassenger(seat)
+                elseif type(car.getMaxPassengers) == "function" and type(car.getCharacter) == "function" then
+                    for s = 0, math.max(0, car:getMaxPassengers() - 1) do
+                        if car:getCharacter(s) == body then car:clearPassenger(s) end
+                    end
+                end
+            end
+            if type(body.setVehicle) == "function" and type(body.getVehicle) == "function" and body:getVehicle() ~= nil then
+                body:setVehicle(nil)
+            end
+        end)
+        inCar = F.isSeatedInVehicle(body, v)
+    end
+    -- As long as a bodiless NPC is physically seated in any vehicle, keep crash guard ON
+    -- even if a caller requested active=false (e.g. DrivingEntry.clear called from inside
+    -- DrivingEntry.seated, or F.releaseSP while crew is still aboard).
+    local guard = inCar
+    if guard and not dead then
+        pcall(function()
+            if type(body.isKnockedDown) == "function" and body:isKnockedDown() == true and type(body.setKnockedDown) == "function" then
+                body:setKnockedDown(false)
+            end
+        end)
+    end
+    if guard or active == false or dead then
+        local already = false
+        pcall(function()
+            already = type(body.isGodMod) == "function" and body:isGodMod() == guard
+        end)
+        if not already then
+            pcall(body.setGodMod, body, guard, true)
+            if type(body.setInvulnerable) == "function" then
+                pcall(body.setInvulnerable, body, guard)
+            end
+        end
+    end
 end
 
 function F.syncVehicleOccupants(v, active)
@@ -138,7 +208,11 @@ function F.ensureSP(s, entry)
     local v, npc = s.vehicle, s.npc
     if not v or not npc or not A.Convoy or A.Convoy.known[v:getId()] ~= entry
             or A.Convoy.sessionFor(v:getId()) ~= s then return false end
-    local function refuse() F.releaseSP(v) return false end
+    local function refuse()
+        F.syncVehicleOccupants(v, true)
+        F.releaseSP(v)
+        return false
+    end
     if npc:isDead() or instanceof(npc, "IsoPlayer") or not F.playersAllowed(v)
             or v:getModData()[A.MODDATA_ID] ~= entry.caravanId then return refuse() end
     local p = ProjectALife
@@ -367,6 +441,89 @@ function F.prepare(s, entry)
     s.alcBrakeReleased = true
     A.debug("car", v:getId(), "parked brake released for NPC drive")
     return true
+end
+
+F.nextCellGuardAt = 0
+
+function F.installCompatHooks()
+    if F.compatHooksInstalled then return end
+    local tw = type(TilterWreck) == "table" and TilterWreck or nil
+    local veh = tw and type(tw.Vehicle) == "table" and tw.Vehicle or nil
+    if not veh or type(veh.update) ~= "function" then return end
+    F.compatHooksInstalled = true
+    local origUpdate = veh.update
+    veh.update = function(v, ...)
+        if v ~= nil then F.syncVehicleOccupants(v, true) end
+        return origUpdate(v, ...)
+    end
+    if type(veh.pushBack) == "function" then
+        local origPush = veh.pushBack
+        veh.pushBack = function(v, obj, f, ...)
+            if v ~= nil then F.syncVehicleOccupants(v, true) end
+            return origPush(v, obj, f, ...)
+        end
+    end
+end
+
+function F.guardCellVehicles()
+    if isClient() then return end
+    if A.Convoy and type(A.Convoy.installHooks) == "function" then
+        pcall(A.Convoy.installHooks)
+    end
+    pcall(F.installCompatHooks)
+    for v in pairs(F.spVehicles) do
+        F.syncVehicleOccupants(v, true)
+    end
+    if A.Convoy and type(A.Convoy.known) == "table" and type(getVehicleById) == "function" then
+        for id in pairs(A.Convoy.known) do
+            local v = getVehicleById(id)
+            if v ~= nil then F.syncVehicleOccupants(v, true) end
+        end
+    end
+    local p = ProjectALife
+    if p and type(getVehicleById) == "function" then
+        local owner = (isServer() and p.DrivingDemoServer) or p.DrivingDemoClient
+        if owner then
+            for id, s in pairs(owner.sessions or {}) do
+                local v = (s and s.vehicle) or getVehicleById(id)
+                if v ~= nil then F.syncVehicleOccupants(v, true) end
+            end
+            for id, rec in pairs(owner.sleeping or {}) do
+                local v = (rec and rec.session and rec.session.vehicle) or getVehicleById(id)
+                if v ~= nil then F.syncVehicleOccupants(v, true) end
+            end
+        end
+        if p.VehicleArrivals and type(p.VehicleArrivals.active) == "table" then
+            for id, car in pairs(p.VehicleArrivals.active) do
+                local v = car or getVehicleById(id)
+                if v ~= nil then F.syncVehicleOccupants(v, true) end
+            end
+        end
+    end
+    local now = A.now()
+    if now < (F.nextCellGuardAt or 0) then return end
+    F.nextCellGuardAt = now + 150
+    local cell = type(getCell) == "function" and getCell() or nil
+    local list = cell and type(cell.getVehicles) == "function" and cell:getVehicles() or nil
+    if not list then return end
+    pcall(function()
+        if type(list.iterator) == "function" then
+            local it = list:iterator()
+            while it and it:hasNext() do
+                local v = it:next()
+                if v ~= nil then F.syncVehicleOccupants(v, true) end
+            end
+        elseif type(list.size) == "function" and type(list.get) == "function" then
+            for i = 0, list:size() - 1 do
+                local v = list:get(i)
+                if v ~= nil then F.syncVehicleOccupants(v, true) end
+            end
+        end
+    end)
+end
+
+if Events and Events.OnTick and type(Events.OnTick.Add) == "function" then
+    Events.OnTick.Add(F.guardCellVehicles)
 end
 
 return F

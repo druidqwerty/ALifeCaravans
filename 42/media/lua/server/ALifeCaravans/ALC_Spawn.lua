@@ -116,6 +116,21 @@ function S.install()
             return car, seats
         end
     end, "VehicleArrivalVehicle.create")
+    if type(p.VehicleArrivals.actorReady) == "function" then
+        A.wrap(p.VehicleArrivals, "actorReady", function(original)
+            return function(plan, index, uid, ...)
+                local ok, why = original(plan, index, uid, ...)
+                if ok == true and type(plan) == "table" and type(plan.assignments) == "table" then
+                    local assign = plan.assignments[index]
+                    local car = assign and assign.car and assign.car.vehicle or nil
+                    if car ~= nil and A.Physics and type(A.Physics.syncVehicleOccupants) == "function" then
+                        pcall(A.Physics.syncVehicleOccupants, car, true)
+                    end
+                end
+                return ok, why
+            end
+        end, "VehicleArrivals.actorReady")
+    end
     A.wrap(p.DrivingLifecycle, "create", function(original)
         return function(owner, old, car, crew, token, route, boarding)
             local tag = A.vehicleTag(car)
@@ -386,18 +401,20 @@ function S.releaseCar(vehicleId, caravanId)
             if previous and previous.vehicle and A.vehicleTag(previous.vehicle) ~= caravanId then return false end
         end
     end
+    if owner ~= nil then
+        local D, L = p.DrivingDemo, p.DrivingLifecycle
+        pcall(function()
+            if s ~= nil and D ~= nil then D.release(s) end
+            if record ~= nil then
+                if record.restored and record.restored ~= s then D.release(record.restored) end
+                if record.session and record.session ~= s then D.release(record.session) end
+            end
+            if s ~= nil and L ~= nil and type(L.forget) == "function" then L.forget(s) end
+        end)
+    end
     if car and A.Physics.releaseSP then A.Physics.releaseSP(car) end
     if car and A.Physics.syncVehicleOccupants then pcall(A.Physics.syncVehicleOccupants, car, false) end
     if owner == nil then return true end
-    local D, L = p.DrivingDemo, p.DrivingLifecycle
-    pcall(function()
-        if s ~= nil and D ~= nil then D.release(s) end
-        if record ~= nil then
-            if record.restored and record.restored ~= s then D.release(record.restored) end
-            if record.session and record.session ~= s then D.release(record.session) end
-        end
-        if s ~= nil and L ~= nil and type(L.forget) == "function" then L.forget(s) end
-    end)
     if owner.sessions then owner.sessions[vehicleId] = nil end
     if owner.sleeping then owner.sleeping[vehicleId] = nil end
     if owner.bindings then owner.bindings[vehicleId] = nil end

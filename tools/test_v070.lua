@@ -40,19 +40,62 @@ return function(check, newVehicle)
     V.scan(true)
     check("elite bloc maps to police rather than military", V.classFor({ relations = { bloc = "elite" } }) == "police")
 
-    -- 2. Crash guard stays active while braking/halted and clears on dismount (@melixrism)
+    -- 2. Crash guard stays active across DrivingEntry.seated->clear, releaseSP, and dead-occupant ejection (@melixrism / TilterWreck)
     local crashCar = newVehicle("Base.CarNormal", 140, 100)
+    function crashCar:clearPassenger(seat) self.passengers[seat] = nil return true end
     local npcBody = {
-        godMod = false, dead = false, vehicle = crashCar,
+        godMod = false, dead = false, knocked = true, vehicle = crashCar,
         isDead = function(self) return self.dead end,
+        isGodMod = function(self) return self.godMod end,
+        isKnockedDown = function(self) return self.knocked end,
+        setKnockedDown = function(self, val) self.knocked = val == true end,
         getVehicle = function(self) return self.vehicle end,
+        setVehicle = function(self, v) self.vehicle = v end,
         getBodyDamage = function() return nil end,
         setGodMod = function(self, val) self.godMod = val == true end,
         getModData = function() return { ProjectALifeUID = "npc_crash_1", ProjectALifeGeneration = 1 } end,
     }
     crashCar.passengers[0] = npcBody
     F.syncCrashGuard(crashCar, { { npc = npcBody, seat = 0, boarded = true } }, true)
-    check("crash guard active while seated and braking/halted", npcBody.godMod == true)
+    check("crash guard active while seated and clears knockdown state", npcBody.godMod == true and npcBody.knocked == false)
+
+    -- Simulate ProjectALife DrivingEntry.seated(npc) calling DrivingEntry.clear(npc, true) while npc is still in crashCar
+    ProjectALife.DrivingEntry = ProjectALife.DrivingEntry or {}
+    ProjectALife.DrivingEntry.clear = ProjectALife.DrivingEntry.clear or function() end
+    ProjectALife.DrivingEntry.seated = ProjectALife.DrivingEntry.seated or function(n) ProjectALife.DrivingEntry.clear(n, true) end
+    C.hooksInstalled = false
+    C.installHooks()
+    ProjectALife.DrivingEntry.clear(npcBody, true)
+    check("DrivingEntry.clear called while seated preserves crash guard", npcBody.godMod == true)
+    npcBody.godMod = false
+    ProjectALife.DrivingEntry.seated(npcBody)
+    check("DrivingEntry.seated enforces crash guard on seated NPC", npcBody.godMod == true)
+
+    -- Simulate F.releaseSP / F.syncCrashGuard(..., false) while NPC is still physically seated in crashCar
+    F.syncCrashGuard(crashCar, { { npc = npcBody, seat = 0, boarded = true } }, false)
+    check("releaseSP / syncCrashGuard(false) never strips crash guard while NPC remains in car", npcBody.godMod == true)
+
+    -- Simulate TilterWreck debris killing one passenger inside crashCar while driver remains alive
+    local deadPassenger = {
+        godMod = true, dead = true, vehicle = crashCar,
+        isDead = function(self) return self.dead end,
+        isGodMod = function(self) return self.godMod end,
+        getVehicle = function(self) return self.vehicle end,
+        setVehicle = function(self, v) self.vehicle = v end,
+        getBodyDamage = function() return nil end,
+        setGodMod = function(self, val) self.godMod = val == true end,
+    }
+    crashCar.passengers[1] = deadPassenger
+    F.syncVehicleOccupants(crashCar, true)
+    check("dead bodiless passenger immediately ejected from seat and living driver keeps crash guard",
+        crashCar:getCharacter(1) == nil and deadPassenger.vehicle == nil and deadPassenger.godMod == false and npcBody.godMod == true)
+
+    -- Simulate OnTick cell vehicle guard (F.guardCellVehicles)
+    npcBody.godMod = false
+    F.nextCellGuardAt = 0
+    F.guardCellVehicles()
+    check("OnTick guardCellVehicles restores crash guard on seated bodiless occupant", npcBody.godMod == true)
+
     npcBody.vehicle = nil
     crashCar.passengers[0] = nil
     F.syncVehicleOccupants(crashCar, false)

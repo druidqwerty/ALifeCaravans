@@ -138,8 +138,14 @@ function B.onShot(player, args)
         pcall(function()
             if type(car.exitRSync) == "function" and body:getVehicle() == car then
                 car:exitRSync(body)
-            elseif type(car.clearPassenger) == "function" then
-                car:clearPassenger(seat)
+            end
+            if type(car.clearPassenger) == "function" and seat ~= nil and seat >= 0 then
+                if type(car.getCharacter) ~= "function" or car:getCharacter(seat) == body then
+                    car:clearPassenger(seat)
+                end
+            end
+            if type(body.setVehicle) == "function" and body:getVehicle() == car then
+                body:setVehicle(nil)
             end
         end)
         if type(body.Kill) == "function" then

@@ -730,11 +730,82 @@ function C.installHooks()
             return function(npc, ...)
                 local res = original(npc, ...)
                 if npc ~= nil and A.Physics and type(A.Physics.syncBodyCrashGuard) == "function" then
-                    pcall(A.Physics.syncBodyCrashGuard, npc, nil, false)
+                    local car = type(npc.getVehicle) == "function" and npc:getVehicle() or nil
+                    pcall(A.Physics.syncBodyCrashGuard, npc, car, car ~= nil)
                 end
                 return res
             end
         end, "DrivingEntry.clear")
+    end
+    if type(p.DrivingEntry) == "table" and type(p.DrivingEntry.seated) == "function" then
+        A.wrap(p.DrivingEntry, "seated", function(original)
+            return function(npc, ...)
+                local res = original(npc, ...)
+                if npc ~= nil and A.Physics and type(A.Physics.syncBodyCrashGuard) == "function" then
+                    local car = type(npc.getVehicle) == "function" and npc:getVehicle() or nil
+                    pcall(A.Physics.syncBodyCrashGuard, npc, car, true)
+                end
+                return res
+            end
+        end, "DrivingEntry.seated")
+    end
+    if type(p.DrivingBoarding) == "table" and type(p.DrivingBoarding.seat) == "function" then
+        A.wrap(p.DrivingBoarding, "seat", function(original)
+            return function(member, ...)
+                local res = original(member, ...)
+                if type(member) == "table" and A.Physics then
+                    if member.npc ~= nil and type(A.Physics.syncBodyCrashGuard) == "function" then
+                        pcall(A.Physics.syncBodyCrashGuard, member.npc, member.vehicle, true)
+                    end
+                    if member.vehicle ~= nil and type(A.Physics.syncVehicleOccupants) == "function" then
+                        pcall(A.Physics.syncVehicleOccupants, member.vehicle, true)
+                    end
+                end
+                return res
+            end
+        end, "DrivingBoarding.seat")
+    end
+    if type(p.DrivingDemo) == "table" and type(p.DrivingDemo.seat) == "function" then
+        A.wrap(p.DrivingDemo, "seat", function(original)
+            return function(session, ...)
+                local res = original(session, ...)
+                if type(session) == "table" and session.vehicle ~= nil and A.Physics and type(A.Physics.syncVehicleOccupants) == "function" then
+                    pcall(A.Physics.syncVehicleOccupants, session.vehicle, true)
+                end
+                return res
+            end
+        end, "DrivingDemo.seat")
+    end
+    if type(p.DrivingDemo) == "table" and type(p.DrivingDemo.release) == "function" then
+        A.wrap(p.DrivingDemo, "release", function(original)
+            return function(session, ...)
+                local members = (type(session) == "table" and type(p.DrivingDemo.members) == "function" and p.DrivingDemo.members(session)) or nil
+                local car = type(session) == "table" and session.vehicle or nil
+                local res = original(session, ...)
+                if A.Physics then
+                    for _, m in ipairs(members or {}) do
+                        if m and m.npc ~= nil and type(A.Physics.syncBodyCrashGuard) == "function" then
+                            pcall(A.Physics.syncBodyCrashGuard, m.npc, car, false)
+                        end
+                    end
+                    if car ~= nil and type(A.Physics.syncVehicleOccupants) == "function" then
+                        pcall(A.Physics.syncVehicleOccupants, car, false)
+                    end
+                end
+                return res
+            end
+        end, "DrivingDemo.release")
+    end
+    if type(p.DrivingProtection) == "table" and type(p.DrivingProtection.sync) == "function" then
+        A.wrap(p.DrivingProtection, "sync", function(original)
+            return function(member, ...)
+                local res = original(member, ...)
+                if res == true and type(member) == "table" and member.npc ~= nil and A.Physics and type(A.Physics.syncBodyCrashGuard) == "function" then
+                    pcall(A.Physics.syncBodyCrashGuard, member.npc, member.vehicle, true)
+                end
+                return res
+            end
+        end, "DrivingProtection.sync")
     end
 end
 
