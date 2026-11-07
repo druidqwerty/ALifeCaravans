@@ -9,6 +9,8 @@ require "ALifeCaravans/00_ALC_Core"
 require "ALifeCaravans/01_ALC_Lines"
 require "ALifeCaravans/04_ALC_Convoy"
 require "ALifeCaravans/05_ALC_Trade"
+require "ALifeCaravans/07_ALC_Market"
+require "ALifeCaravans/08_ALC_Ballistics"
 require "ALifeCaravans/ALC_Map"
 require "ISUI/ISCollapsableWindow"
 require "ISUI/ISScrollingListBox"
@@ -152,6 +154,10 @@ function Cl.receive(module, command, args)
             if vars.reasonKey ~= nil then vars.reason = L.ui("sos_reason_" .. tostring(vars.reasonKey), tostring(vars.reasonKey)) end
             Cl.notice(L.ui("sos_" .. args.key, args.key, vars))
         end
+    elseif command == "serviceNotice" then
+        if type(args) == "table" and type(args.key) == "string" then
+            Cl.notice(L.ui("service_" .. args.key, args.key, type(args.vars) == "table" and args.vars or {}), args.playerNum)
+        end
     elseif command == "notice" then
         Cl.notice(type(args) == "table" and args.text or nil)
     end
@@ -201,6 +207,17 @@ function Cl.fill(playerNum, context, worldobjects, test)
         if A.settings.allowRiders and not entry.hostile then option(submenu, L.ui("ride", "Ask for a ride to {dest}", { dest = entry.dest }), send("ride")) end
         if A.settings.escortContracts and not entry.hostile and entry.escort == nil then
             option(submenu, L.ui("escort", "Offer an escort to {dest}", { dest = entry.dest }), send("escort"))
+        end
+        if A.settings.fieldServices and not entry.hostile then
+            if entry.needsRepair then
+                option(submenu, L.ui("panel_repair", "Help repair / refuel"), send("assist_repair"))
+            end
+            if entry.kind == "rescue" or entry.eventType == "medical_aid" then
+                option(submenu, L.ui("panel_aid", "Request field first aid"), send("field_aid"))
+            end
+            if entry.eventType == "refugees" then
+                option(submenu, L.ui("panel_donate", "Donate relief supplies"), send("donate_supplies"))
+            end
         end
         option(submenu, L.ui("wait", "Ask them to wait"), send("wait"))
         option(submenu, L.ui("farewell", "Let them go"), send("farewell"))
@@ -267,6 +284,16 @@ function Cl.installOptions()
     if not ok then A.fail("mod options", err) end
 end
 
+function Cl.onWeaponAttack(attacker, weapon)
+    if attacker == nil or A.Ballistics == nil or type(A.Ballistics.findAimedCaravanVehicle) ~= "function" then return end
+    local localPl = player0()
+    if localPl ~= nil and attacker ~= localPl then return end
+    local vehicleId, damage, isRanged = A.Ballistics.findAimedCaravanVehicle(attacker, weapon)
+    if vehicleId ~= nil then
+        Cl.send("vehicleShot", { vehicleId = vehicleId, damage = damage, ranged = isRanged }, attacker.getPlayerNum and attacker:getPlayerNum() or 0)
+    end
+end
+
 if not A.clientRegistered then
     A.clientRegistered = true
     Cl.installOptions()
@@ -275,6 +302,11 @@ if not A.clientRegistered then
         if Events.OnServerCommand then Events.OnServerCommand.Add(Cl.receive) end
         if Events.OnTick then Events.OnTick.Add(function() pcall(Cl.tick) end) end
         if Events.OnGameStart then Events.OnGameStart.Add(function() pcall(A.Map.install) end) end
+        if Events.OnWeaponSwingHitPoint then
+            Events.OnWeaponSwingHitPoint.Add(function(attacker, weapon) pcall(Cl.onWeaponAttack, attacker, weapon) end)
+        elseif Events.OnWeaponSwing then
+            Events.OnWeaponSwing.Add(function(attacker, weapon) pcall(Cl.onWeaponAttack, attacker, weapon) end)
+        end
     end
 end
 

@@ -27,19 +27,21 @@ end
 
 function F.wakeSP(v, npc, driving, s)
     local asleep = type(v.isPhysicsActive) == "function" and v:isPhysicsActive() == false
+    local speed = type(v.getCurrentSpeedKmHour) == "function" and math.abs(v:getCurrentSpeedKmHour()) or 0
     if not driving or v:getDriver() ~= npc or npc:getVehicle() ~= v
-            or not v:isEngineRunning() or (not asleep and math.abs(v:getCurrentSpeedKmHour()) > 0.5) then return false end
+            or not v:isEngineRunning() or (not asleep and speed > 0.5) then return false end
     local vx, vy = A.xyz(v)
+    local now = A.now()
     local movedChunk = s and vx ~= nil and s.alcWokeSP and (s.alcChunkX == nil or A.dist(vx, vy, s.alcChunkX, s.alcChunkY) >= 5.5)
-    if s and s.alcWokeSP and not asleep and not movedChunk then return true end
-    if asleep and s and s.alcWokeSP then
-        local now = A.now()
+    local stalledDrive = s and s.alcWokeSP and (s.driveAcceleration or 0) > 1.0 and speed < 0.25 and now >= (s.alcWakeRetryAt or 0)
+    if s and s.alcWokeSP and not asleep and not movedChunk and not stalledDrive then return true end
+    if (asleep or stalledDrive) and s and s.alcWokeSP then
         if now < (s.alcWakeRetryAt or 0) then return false end
-        s.alcWakeRetryAt = now + 1000
+        s.alcWakeRetryAt = now + 1500
     end
     if type(v.checkSurroundingChunks) == "function" then v:checkSurroundingChunks() end
     if s and vx ~= nil then s.alcChunkX, s.alcChunkY = vx, vy end
-    if not s or not s.alcWokeSP or asleep then
+    if not s or not s.alcWokeSP or asleep or stalledDrive then
         if type(v.setPhysicsActive) == "function" then
             if type(v.isPhysicsActive) == "function" and v:isPhysicsActive() then v:setPhysicsActive(false) end
             v:setPhysicsActive(true)
@@ -80,18 +82,37 @@ function F.acquireSP(v, npc, caravanId, uid, generation, ridersAllowed, driving,
     return true
 end
 
+function F.syncBodyCrashGuard(body, v, active)
+    if not body or instanceof(body, "IsoPlayer") or type(body.setGodMod) ~= "function" then return end
+    local noBodyDamage = type(body.getBodyDamage) ~= "function" or body:getBodyDamage() == nil
+    if not noBodyDamage then return end
+    local inCar = false
+    pcall(function() inCar = v ~= nil and body:getVehicle() == v and not body:isDead() end)
+    local guard = active ~= false and inCar
+    pcall(body.setGodMod, body, guard, true)
+end
+
+function F.syncVehicleOccupants(v, active)
+    if not v or isClient() then return end
+    pcall(function()
+        local seats = type(v.getMaxPassengers) == "function" and v:getMaxPassengers() or 0
+        for seat = 0, math.max(0, seats - 1) do
+            local body = v:getCharacter(seat)
+            if body ~= nil then F.syncBodyCrashGuard(body, v, active) end
+        end
+    end)
+end
+
 function F.syncCrashGuard(v, members, active)
     if not v or isClient() then return end
     for _, member in ipairs(members or {}) do
         local body = member and member.npc
-        if body and not instanceof(body, "IsoPlayer") and type(body.setGodMod) == "function" then
-            local noBodyDamage = type(body.getBodyDamage) ~= "function" or body:getBodyDamage() == nil
-            if noBodyDamage then
-                local guard = active == true and member.boarded == true and body:getVehicle() == v and not body:isDead()
-                pcall(body.setGodMod, body, guard, true)
-            end
+        if body ~= nil then
+            local keep = active ~= false and member.boarded ~= false
+            F.syncBodyCrashGuard(body, v, keep)
         end
     end
+    F.syncVehicleOccupants(v, active)
 end
 
 function F.releaseSP(v)
@@ -145,7 +166,10 @@ function F.ensureSP(s, entry)
     local driving = allBoarded and s.phase == "driving" and s.entryComplete == true and not entry.halted
         and not s.braking and not s.exitAt and not s.exitRequested and not s.detaching
     if not driving then s.alcWokeSP = nil end
-    F.syncCrashGuard(v, members, driving)
+    -- Keep crash guard active whenever bodiless NPCs remain seated in the car
+    -- (including while braking, halted, boarding, or slowing down to dismount)
+    -- so wall impacts never trigger BaseVehicle.crash BodyDamage NPE.
+    F.syncCrashGuard(v, members, true)
     local ok, result = pcall(F.acquireSP, v, npc, entry.caravanId, s.uid, s.generation, F.ridersAllowed(v), driving, s)
     if not ok then
         if not s.alcSPError then A.log("SP vehicle adapter failed:", tostring(result)) end
@@ -288,13 +312,16 @@ function F.prepare(s, entry)
         end
         if s.alcBrakeReleased and not s.alcBrakeError and not s.obstacleSince and not s.terrainWaiting and not s.alcPhysicsWaiting then
             local speed = type(v.getCurrentSpeedKmHour) == "function" and math.abs(v:getCurrentSpeedKmHour()) or 0
-            if (s.driveAcceleration or 0) > 1.5 and speed < 0.25 then
+            if (s.driveAcceleration or 0) > 1.0 and speed < 0.3 then
                 local now = A.now()
                 s.alcBrakeStallAt = s.alcBrakeStallAt or now
-                if now - s.alcBrakeStallAt >= 750 and (s.alcBrakeRetries or 0) < 3 then
+                local retryWait = (s.alcBrakeRetries or 0) < 3 and 750 or 1500
+                if now - s.alcBrakeStallAt >= retryWait then
                     s.alcBrakeRetries = (s.alcBrakeRetries or 0) + 1
                     s.alcBrakeReleased = nil
                     s.alcBrakeStallAt = now
+                    if type(v.checkSurroundingChunks) == "function" then pcall(v.checkSurroundingChunks, v) end
+                    if not isClient() and type(v.setPhysicsActive) == "function" then pcall(v.setPhysicsActive, v, true) end
                 end
             else
                 s.alcBrakeStallAt = nil

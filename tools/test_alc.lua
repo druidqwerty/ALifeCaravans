@@ -870,6 +870,7 @@ assert(loadfile(MOD_ROOT .. "/tools/test_ownership.lua"))()(check)
 assert(loadfile(MOD_ROOT .. "/tools/test_lifecycle.lua"))()(check, newVehicle)
 assert(loadfile(MOD_ROOT .. "/tools/test_threats.lua"))()(check, newVehicle)
 assert(loadfile(MOD_ROOT .. "/tools/test_route_restart.lua"))()(check, newVehicle)
+assert(loadfile(MOD_ROOT .. "/tools/test_v070.lua"))()(check, newVehicle)
 failed = failed + dofile(MOD_ROOT .. "/tools/test_interactions.lua")
 local noticeCount = #NOTICES
 Client.notice("B42.21 notice overload regression")

@@ -62,5 +62,11 @@
     "Sandbox_ALifeCaravans_NightTravelPenalty": "Night speed, percent",
     "Sandbox_ALifeCaravans_DistressCalls": "Radio distress calls",
     "Sandbox_ALifeCaravans_LivingWorld": "Local zombie reactions and friendly-base visits",
-    "Sandbox_ALifeCaravans_BreakdownChance_tooltip": "Chance at each two-minute check for a 45-second roadside inspection. Never destroys the engine. Set 0 to disable."
+    "Sandbox_ALifeCaravans_BreakdownChance_tooltip": "Chance at each two-minute check for a 45-second roadside inspection. Never destroys the engine. Set 0 to disable.",
+    "Sandbox_ALifeCaravans_AllowHeavyArmor": "Allow heavy armored vehicles and tanks",
+    "Sandbox_ALifeCaravans_AllowHeavyArmor_tooltip": "Off by default so modded main battle tanks and APCs do not spawn in ordinary road convoys. Enable to allow heavy military armor for military factions.",
+    "Sandbox_ALifeCaravans_EconomyEnabled": "Regional town supply and demand economy",
+    "Sandbox_ALifeCaravans_EconomyEnabled_tooltip": "Towns track shortages and surpluses across medical, food, ammo, fuel, and tools. Caravans route toward shortages and pay higher barter credit for scarce goods.",
+    "Sandbox_ALifeCaravans_FieldServices": "Roadside repair assistance and field services",
+    "Sandbox_ALifeCaravans_FieldServices_tooltip": "Allows players to help repair/refuel halted convoys for pay and favor, request field first aid from medics, donate relief supplies, and service player vehicles."
 }

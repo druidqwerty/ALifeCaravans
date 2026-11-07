@@ -81,13 +81,22 @@ function U.header(win,entry,heading)
     local c=U.palette()
     U.panel(win,12,28,win.width-24,78,c)
     win:drawRect(12,28,3,78,1,c.accent[1],c.accent[2],c.accent[3])
-    U.text(win,heading,24,35,c.accent)
+    local topHeading = heading
+    if entry.eventType and entry.eventType ~= "" then
+        local evName = A.Lines.ui("event_" .. tostring(entry.eventType), tostring(entry.eventType))
+        topHeading = tostring(heading) .. " · " .. tostring(evName)
+    end
+    U.text(win,U.fit(topHeading,win.width-48),24,35,c.accent)
     local title=tostring(entry.leader or entry.name or "?")
     if entry.callsign and entry.callsign~="" then title=title.." / "..entry.callsign end
     U.text(win,U.fit(title,win.width-48,UIFont.Medium),24,52,c.name,UIFont.Medium)
     local status,tone=U.state(entry)
     local route=A.Lines.ui("route_to","To {dest}",{dest=entry.dest or "?"})
-    U.text(win,U.fit(route,win.width*0.52),24,82,c.muted)
+    if type(entry.market)=="table" and entry.market.shortage then
+        local catName=A.Lines.ui("cat_"..tostring(entry.market.shortage),tostring(entry.market.shortage))
+        route=route.." · "..A.Lines.ui("market_shortage","Demand: {cat} (+35%)",{cat=catName})
+    end
+    U.text(win,U.fit(route,win.width*0.62),24,82,c.muted)
     local width=getTextManager():MeasureStringX(UIFont.Small,status)
     U.text(win,status,win.width-24-width,82,c[tone])
 end

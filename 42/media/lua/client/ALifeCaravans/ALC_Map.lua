@@ -32,7 +32,7 @@ function M.setMarkers(list)
         local entry = {
             id = marker.id, name = marker.name, callsign = marker.callsign, kind = marker.kind, state = marker.state,
             halted = marker.halted, dest = marker.dest, cars = marker.cars, heading = finite(marker.heading) or 0,
-            sos = marker.sos == true,
+            sos = marker.sos == true, eventType = marker.eventType,
             x1 = tonumber(marker.x) or 0, y1 = tonumber(marker.y) or 0, t1 = now,
         }
         if previous ~= nil then
@@ -127,6 +127,10 @@ function M.drawOn(element, api, labels, size)
                 end
                 if labels then
                     local text = tostring(marker.callsign or marker.name) .. " (" .. kindLabel(marker.kind) .. ")"
+                    if marker.eventType and marker.eventType ~= "" then
+                        local evLabel = A.Lines.ui("event_" .. tostring(marker.eventType), tostring(marker.eventType))
+                        text = text .. " [" .. tostring(evLabel) .. "]"
+                    end
                     if marker.sos then text = "SOS - " .. text end
                     element:drawText(text, sx + half + 8, sy - 7, 0, 0, 0, 0.8, UIFont.Small)
                     element:drawText(text, sx + half + 7, sy - 8, 1, 1, 1, 1, UIFont.Small)

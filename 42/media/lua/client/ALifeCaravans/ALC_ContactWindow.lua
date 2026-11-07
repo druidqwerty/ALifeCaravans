@@ -10,6 +10,8 @@ local actions={
     {"ride","panel_ride","Request a seat"}, {"escort","panel_escort","Escort convoy"},
     {"news","news","Ask for news"}, {"wait","wait","Ask them to wait"},
     {"farewell","farewell","Let them go"}, {"inspect_cargo","panel_cargo","Inspect cargo"},
+    {"assist_repair","panel_repair","Help repair / refuel"}, {"field_aid","panel_aid","Field first aid"},
+    {"donate_supplies","panel_donate","Donate supplies"}, {"vehicle_service","panel_vservice","Service my vehicle"},
     {"distress_help","panel_rescue","Help the crew"}, {"caravan_status","panel_status","Detailed status"},
 }
 
@@ -18,10 +20,10 @@ if Panel then
         ISCollapsableWindow.createChildren(self)
         self.buttons={}
         local width=math.floor((self.width-36)/2)
-        local rowHeight=math.max(38,getTextManager():getFontHeight(UIFont.Small)+16)
+        local rowHeight=math.max(34,getTextManager():getFontHeight(UIFont.Small)+12)
         for i,action in ipairs(actions) do
             local x=12+((i-1)%2)*(width+12)
-            local y=174+math.floor((i-1)/2)*(rowHeight+8)
+            local y=170+math.floor((i-1)/2)*(rowHeight+6)
             local button=ISButton:new(x,y,width,rowHeight,L.ui(action[2],action[3]),self,Panel.act)
             button.command=action[1]
             button:initialise()
@@ -29,7 +31,8 @@ if Panel then
             self:addChild(button)
             self.buttons[#self.buttons+1]=button
         end
-        local bottom=174+5*(rowHeight+8)+8
+        local rowsCount=math.ceil(#actions/2)
+        local bottom=170+rowsCount*(rowHeight+6)+8
         self:setHeight(bottom+40)
         self.closeButton=ISButton:new(self.width-132,bottom,120,28,L.ui("close_button","Close"),self,Panel.close)
         self.closeButton:initialise()
@@ -87,6 +90,8 @@ if Panel then
             elseif command=="ride" then allowed=e.halted and not e.hostile and A.settings.allowRiders
             elseif command=="escort" then allowed=not e.hostile and not e.escort and A.settings.escortContracts
             elseif command=="wait" or command=="farewell" then allowed=e.halted and not e.hostile
+            elseif command=="assist_repair" then allowed=A.settings.fieldServices and not e.hostile and (e.halted or e.needsRepair==true)
+            elseif command=="field_aid" or command=="donate_supplies" or command=="vehicle_service" then allowed=A.settings.fieldServices and e.halted and not e.hostile
             elseif command=="distress_help" then allowed=e.sosState=="open" and not e.hostile and A.settings.sosContracts end
             button:setEnable(allowed==true)
             if self.joyfocus then button:setJoypadFocused(i==self.joyIndex,self.joyfocus) end

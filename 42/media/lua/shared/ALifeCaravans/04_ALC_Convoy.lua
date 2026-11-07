@@ -557,12 +557,13 @@ function C.fastScene(v, tuning, id, entry)
     end
     for _, row in ipairs(world.pedestrians) do
         if row.obj ~= v and math.abs(row.z - (vz or 0)) <= 0.5
-                and (vx == nil or A.dist(row.x, row.y, vx, vy) <= 60) then
+                and (vx == nil or A.dist(row.x, row.y, vx, vy) <= 14) then
             local moving = true
             if vx ~= nil and fx ~= nil then
                 local dx, dy = row.x - vx, row.y - vy
+                local along = dx * fx + dy * fy
                 local across = math.abs(-dx * fy + dy * fx)
-                if across > 1.35 then moving = false end
+                if along < -1.0 or along > 12.0 or across > 1.15 then moving = false end
             end
             bodies[#bodies + 1] = {
                 x = row.x, y = row.y, radius = 0.5, label = row.label,
@@ -629,8 +630,11 @@ function C.installHooks()
                     if not sameConvoy then
                         if (b.label == "player" or b.label == "A-Life NPC") and vx ~= nil and fx ~= nil then
                             local dx, dy = b.x - vx, b.y - vy
+                            local along = dx * fx + dy * fy
                             local across = math.abs(-dx * fy + dy * fx)
-                            if across > 1.35 then b.moving = false end
+                            if A.dist(b.x, b.y, vx, vy) > 14 or along < -1.0 or along > 12.0 or across > 1.15 then
+                                b.moving = false
+                            end
                         end
                         filtered[#filtered + 1] = b
                     end
@@ -720,6 +724,17 @@ function C.installHooks()
                 return arrived, err
             end
         end, "DrivingEntry.walked")
+    end
+    if type(p.DrivingEntry) == "table" and type(p.DrivingEntry.clear) == "function" then
+        A.wrap(p.DrivingEntry, "clear", function(original)
+            return function(npc, ...)
+                local res = original(npc, ...)
+                if npc ~= nil and A.Physics and type(A.Physics.syncBodyCrashGuard) == "function" then
+                    pcall(A.Physics.syncBodyCrashGuard, npc, nil, false)
+                end
+                return res
+            end
+        end, "DrivingEntry.clear")
     end
 end
 

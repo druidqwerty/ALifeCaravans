@@ -8,7 +8,7 @@ ALifeCaravans = ALifeCaravans or {}
 local A = ALifeCaravans
 
 A.MOD_ID = "ALifeCaravans"
-A.VERSION = "0.6.3"
+A.VERSION = "0.7.0"
 A.TAG = "[ALC]"
 A.MODULE = "ALifeCaravans"        -- client<->server command module name
 A.MODDATA_ID = "ALifeCaravanId"   -- vehicle ModData key (authoritative side only)
@@ -53,6 +53,9 @@ A.defaults = {
     sosTimeoutMinutes = 10,
     sosEscapeTiles = 80,
     livingWorld = true,           -- caravans interact with world (zombie hordes, player bases)
+    allowHeavyArmor = false,      -- allow modded APCs/tanks for military convoys
+    economyEnabled = true,        -- regional town supply & demand market
+    fieldServices = true,         -- roadside first aid, repair/refuel assistance, and road intel
 }
 A.settings = A.settings or {}
 for key, value in pairs(A.defaults) do A.settings[key] = value end
@@ -62,6 +65,7 @@ A.metrics = {
     hails = 0, trades = 0, rides = 0, tolls = 0, fights = 0, flights = 0, lines = 0, errors = 0,
     recrews = 0, abandoned = 0, unstuck = 0, rescouts = 0, escorts = 0, ambushes = 0, radio = 0, barters = 0,
     events = 0, scavenging = 0, breakdowns = 0, refuels = 0, merges = 0, lostCargo = 0, playerCaravans = 0,
+    deliveries = 0, repairs = 0, services = 0, shots = 0,
 }
 
 function A.now()
@@ -235,6 +239,9 @@ function A.refreshSettings()
     s.sosTimeoutMinutes = A.clamp(sandbox.SOSTimeoutMinutes, 2, 30, d.sosTimeoutMinutes)
     s.sosEscapeTiles = A.clamp(sandbox.SOSEscapeTiles, 40, 300, d.sosEscapeTiles)
     s.livingWorld = sandbox.LivingWorld ~= false
+    s.allowHeavyArmor = sandbox.AllowHeavyArmor == true
+    s.economyEnabled = sandbox.EconomyEnabled ~= false
+    s.fieldServices = sandbox.FieldServices ~= false
     return true
 end
 
@@ -318,7 +325,8 @@ function A.counters()
         .. " lines=" .. m.lines .. " errors=" .. m.errors
         .. " events=" .. m.events .. " scavenging=" .. m.scavenging .. " breakdowns=" .. m.breakdowns
         .. " refuels=" .. m.refuels .. " merges=" .. m.merges .. " lostCargo=" .. m.lostCargo
-        .. " playerCaravans=" .. m.playerCaravans
+        .. " playerCaravans=" .. m.playerCaravans .. " deliveries=" .. (m.deliveries or 0)
+        .. " repairs=" .. (m.repairs or 0) .. " services=" .. (m.services or 0)
 end
 
 -- Console helper: ALifeCaravans.status()

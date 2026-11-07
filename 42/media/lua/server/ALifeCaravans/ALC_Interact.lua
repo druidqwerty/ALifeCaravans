@@ -11,7 +11,11 @@ require "ALifeCaravans/00_ALC_Core"
 require "ALifeCaravans/01_ALC_Lines"
 require "ALifeCaravans/04_ALC_Convoy"
 require "ALifeCaravans/05_ALC_Trade"
+require "ALifeCaravans/07_ALC_Market"
+require "ALifeCaravans/08_ALC_Ballistics"
 require "ALifeCaravans/ALC_Ledger"
+require "ALifeCaravans/ALC_Economy"
+require "ALifeCaravans/ALC_Cargo"
 require "ALifeCaravans/ALC_Spawn"
 require "ALifeCaravans/ALC_Director"
 
@@ -219,15 +223,24 @@ end
 function I.stockView(caravan, player, vehicleId)
     local key = A.playerKey(player)
     local favor = A.Ledger.favor(key, caravan.factionId)
+    local context = { market = caravan.market, eventType = caravan.eventType, favor = favor }
     local rows = {}
     for index, row in ipairs(caravan.stock or {}) do
         if row.count > 0 then
-            rows[#rows + 1] = { index = index, item = row.item, name = row.name, count = row.count, price = T.sellPrice(row, caravan.kind, favor) }
+            rows[#rows + 1] = {
+                index = index, item = row.item, name = row.name, count = row.count,
+                price = T.sellPrice(row, caravan.kind, favor, context),
+            }
         end
     end
-    return { vehicleId = vehicleId or (caravan.vehicleIds and caravan.vehicleIds[1]), revision = caravan.stockRevision or 0,
-        rows = rows, kind = caravan.kind, favor = favor, buyRate = T.rateFor(caravan.kind).buy, currency = T.currency,
-        leader = caravan.leaderName, callsign = caravan.callsign }
+    return {
+        vehicleId = vehicleId or (caravan.vehicleIds and caravan.vehicleIds[1]),
+        revision = caravan.stockRevision or 0,
+        rows = rows, kind = caravan.kind, favor = favor,
+        buyRate = T.rateFor(caravan.kind).buy, currency = T.currency,
+        leader = caravan.leaderName, callsign = caravan.callsign,
+        market = caravan.market, eventType = caravan.eventType,
+    }
 end
 
 function I.canTrade(caravan, player)
@@ -251,7 +264,8 @@ function I.deal(caravan, player, vehicleId, args)
         return
     end
     local favor = A.Ledger.favor(key, caravan.factionId)
-    local quote = T.quote(caravan.stock or {}, caravan.kind, favor, args.take, args.give)
+    local context = { market = caravan.market, eventType = caravan.eventType, favor = favor }
+    local quote = T.quote(caravan.stock or {}, caravan.kind, favor, args.take, args.give, context)
     if not quote.ok then
         I.say(caravan, quote.reason == "short" and "trade_broke" or "trade_none", player, I.vars(caravan, player))
         I.reply(player, "dealRefused", { vehicleId = vehicleId, reason = quote.reason })
@@ -287,7 +301,9 @@ function I.escortReward(caravan, players)
     A.Ledger.addFavor(escort.playerKey, caravan.factionId, 3)
     A.metrics.escorts = A.metrics.escorts + 1
     if row == nil then return end
-    local reward = { item = T.currency, name = "cash", count = 80 + A.rand(81) }
+    local ev = A.Market and A.Market.eventSpec(caravan.eventType) or nil
+    local bonus = ev and tonumber(ev.escortBonus) or 0
+    local reward = { item = T.currency, name = "cash", count = 80 + A.rand(81) + bonus }
     for _, stockRow in ipairs(caravan.stock or {}) do
         if stockRow.value >= 40 and stockRow.count > 0 and A.rand(2) == 0 then
             reward = { item = stockRow.item, name = stockRow.name, count = 1 }
@@ -303,6 +319,10 @@ end
 function I.command(player, command, args)
     if not A.authority() or player == nil or type(command) ~= "string" or player:isDead() then return end
     if command == "stateRequest" then A.Director.sendState(player) return end
+    if command == "vehicleShot" and A.Ballistics and type(A.Ballistics.onShot) == "function" then
+        A.Ballistics.onShot(player, args)
+        return
+    end
     local caravan, vehicleId = I.caravanOf(args)
     if caravan == nil then return end
     if command == "arrived" or command == "stuck" then A.Director.onConvoyReport(player, command, args) return end
@@ -315,7 +335,12 @@ function I.command(player, command, args)
         if caravan.state ~= "rendered" then return end
         local stance = I.stanceFor(caravan, player)
         if stance == "hostile" then I.say(caravan, "hail_hostile", player, vars) return end
-        I.say(caravan, A.rand(2) == 0 and "news_dest" or "news", player, vars)
+        local evSituation = caravan.eventType and ("event_" .. tostring(caravan.eventType)) or nil
+        if evSituation and A.Lines.catalog[evSituation] then
+            I.say(caravan, evSituation, player, vars)
+        else
+            I.say(caravan, A.rand(2) == 0 and "news_dest" or "news", player, vars)
+        end
     elseif command == "trade" then
         local ok, why = I.canTrade(caravan, player)
         if not ok then I.say(caravan, why, player, vars) return end
@@ -451,30 +476,49 @@ function I.command(player, command, args)
             I.say(caravan, "inspect_refuse", player, vars)
             return
         end
-        -- Show physical cargo in trunks
+        -- Show physical cargo in trunks (with manifest fallback if vehicle script lacks a trunk container)
         local cargo, byType = {}, {}
         for _, id in ipairs(caravan.vehicleIds or {}) do
             local car = getVehicleById(id)
             if car and A.vehicleTag(car) == caravan.id then
-                local trunk = car:getPartById("TruckBed") or car:getPartById("Trunk")
-                if trunk then
-                    local container = trunk:getItemContainer()
-                    if container then
-                        for i = 0, container:getItems():size() - 1 do
-                            local item = container:getItems():get(i)
-                            local fullType = item:getFullType()
-                            if byType[fullType] then byType[fullType].count=byType[fullType].count+1
-                            elseif #cargo < 256 then
-                                local row={name=item:getDisplayName(),type=fullType,count=1}
-                                cargo[#cargo+1],byType[fullType]=row,row
-                            end
+                local container = (A.Cargo and type(A.Cargo.trunkContainer) == "function" and A.Cargo.trunkContainer(car))
+                    or nil
+                if not container then
+                    local trunk = car:getPartById("TruckBed") or car:getPartById("Trunk")
+                    container = trunk and trunk:getItemContainer() or nil
+                end
+                if container then
+                    for i = 0, container:getItems():size() - 1 do
+                        local item = container:getItems():get(i)
+                        local fullType = item:getFullType()
+                        if byType[fullType] then byType[fullType].count=byType[fullType].count+1
+                        elseif #cargo < 256 then
+                            local row={name=item:getDisplayName(),type=fullType,count=1}
+                            cargo[#cargo+1],byType[fullType]=row,row
                         end
                     end
                 end
             end
         end
+        if #cargo == 0 then
+            for _, srow in ipairs(caravan.stock or {}) do
+                if (tonumber(srow.count) or 0) > 0 then
+                    cargo[#cargo + 1] = { name = srow.name, type = srow.item, count = srow.count }
+                end
+            end
+        end
         I.reply(player, "cargoView", { vehicleId = vehicleId, cargo = cargo, caravanId = caravan.id })
         I.say(caravan, "inspect_ok", player, vars)
+    elseif command == "assist_repair" then
+        if A.Cargo then A.Cargo.assistRepair(caravan, player, vehicleId) end
+    elseif command == "field_aid" then
+        if A.Cargo then A.Cargo.fieldFirstAid(caravan, player, vehicleId) end
+    elseif command == "donate_supplies" then
+        if A.Cargo then A.Cargo.donateSupplies(caravan, player, vehicleId) end
+    elseif command == "vehicle_service" then
+        if A.Cargo then A.Cargo.servicePlayerVehicle(caravan, player, vehicleId) end
+    elseif command == "road_intel" then
+        if A.Cargo then A.Cargo.requestIntel(caravan, player, vehicleId) end
     elseif command == "form_caravan" then
         I.say(caravan, "form_refuse_not_enough", player, vars)
     elseif command == "caravan_status" then
@@ -502,6 +546,9 @@ function I.command(player, command, args)
             stockCount = #(caravan.stock or {}),
             hasEvent = caravan.eventType ~= nil,
             eventType = caravan.eventType,
+            marketShortage = caravan.market and caravan.market.shortage or nil,
+            marketSurplus = caravan.market and caravan.market.surplus or nil,
+            needsRepair = (A.Cargo and type(A.Cargo.needsRepairOrFuel) == "function" and A.Cargo.needsRepairOrFuel(caravan)) == true,
             distress = caravan.distress ~= nil,
             halted = caravan.halted == true,
         }

@@ -18,7 +18,9 @@ require "ALifeCaravans/00_ALC_Core"
 require "ALifeCaravans/02_ALC_Vehicles"
 require "ALifeCaravans/03_ALC_Roads"
 require "ALifeCaravans/04_ALC_Convoy"
+require "ALifeCaravans/06_ALC_Physics"
 require "ALifeCaravans/ALC_Arrival"
+require "ALifeCaravans/ALC_Cargo"
 
 local A = ALifeCaravans
 local S = { pending = nil, installed = false, serial = 0, lastReason = nil, recrewSerial = 0 }
@@ -102,6 +104,12 @@ function S.install()
                 local ok, id = pcall(function() return car:getId() end)
                 if ok then pending.cars[#pending.cars + 1] = id end
                 pcall(function() car:setHeadlightsOn(p.VehicleArrivalVehicle.night()) end)
+                if A.Cargo and type(A.Cargo.populateCar) == "function" then
+                    pcall(A.Cargo.populateCar, car, pending.caravan, (pending.indexBase or 0) + pending.carIndex)
+                end
+                if A.Physics and type(A.Physics.syncVehicleOccupants) == "function" then
+                    pcall(A.Physics.syncVehicleOccupants, car, true)
+                end
             else
                 S.lastReason = seats
             end
@@ -123,7 +131,11 @@ function S.install()
                 old.cruiseSpeed = kmh / 3.6
                 old.systemArrival = true
             end
-            return original(owner, old, car, crew, token, route, boarding)
+            local s, why = original(owner, old, car, crew, token, route, boarding)
+            if car ~= nil and A.Physics and type(A.Physics.syncVehicleOccupants) == "function" then
+                pcall(A.Physics.syncVehicleOccupants, car, true)
+            end
+            return s, why
         end
     end, "DrivingLifecycle.create")
     A.wrap(p.VehicleArrivals, "fallback", function(original)
@@ -375,6 +387,7 @@ function S.releaseCar(vehicleId, caravanId)
         end
     end
     if car and A.Physics.releaseSP then A.Physics.releaseSP(car) end
+    if car and A.Physics.syncVehicleOccupants then pcall(A.Physics.syncVehicleOccupants, car, false) end
     if owner == nil then return true end
     local D, L = p.DrivingDemo, p.DrivingLifecycle
     pcall(function()

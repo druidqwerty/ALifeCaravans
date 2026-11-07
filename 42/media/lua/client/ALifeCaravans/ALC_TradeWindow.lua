@@ -130,7 +130,8 @@ if ALCTradeWindow ~= nil then
         local take, give = self:selection()
         local stock = {}
         for _, row in ipairs(self.sellRows or {}) do stock[row.index] = row end
-        local quote = T.quote(stock, self.kind, self.favor, take, give)
+        local context = { market = self.market, eventType = self.eventType, favor = self.favor }
+        local quote = T.quote(stock, self.kind, self.favor, take, give, context)
         self.quote = quote
         if self.tradeButton then self.tradeButton:setEnable(quote.ok==true) end
     end
@@ -142,13 +143,15 @@ if ALCTradeWindow ~= nil then
         self.giveList:clear()
         if view == nil then return end
         self.kind, self.favor, self.revision = view.kind, view.favor, view.revision
+        self.market, self.eventType = view.market, view.eventType
+        local context = { market = self.market, eventType = self.eventType, favor = self.favor }
         for _, row in ipairs(view.rows or {}) do
             self.sellRows[#self.sellRows+1]={ index = row.index, item = row.item, name = row.name, count = row.count, price = row.price,
                 value = row.price / (T.rateFor(view.kind).sell * T.favorFactor(view.favor)), selected = 0 }
         end
         local player = player0(self.playerNum)
         for _, row in ipairs(tradableInventory(player)) do
-            local price = T.buyPrice(row.type, view.kind)
+            local price = T.buyPrice(row.type, view.kind, context)
             if price > 0 then
                 self.giveRows[#self.giveRows+1]={ type = row.type, name = row.name, count = row.count, price = price, selected = 0 }
             end

@@ -8,7 +8,18 @@ Faction caravans for [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sh
 
 Free and open source. The code is developed with AI; direction, testing and time are mine. [Support the mods on Boosty](https://boosty.to/lrgpp).
 
-> **0.6.3 — major FPS and spawn performance optimization, shared collision-scene caching, and smoother chunk-boundary driving.** See [verification and limits](TEST_0.6.3.md).
+> **0.7.0 — Regional town supply & demand economy, 5 distinct special Event Caravans, physical trunk cargo, roadside repair/medical/vehicle/intel services, and bug fixes from Steam comments.** See [verification and limits](TEST_0.7.0.md).
+
+## New in 0.7.0
+
+- **Regional town supply & demand economy (`07_ALC_Market.lua`, `ALC_Economy.lua`).** Towns on the road graph now track shortages and surpluses across Medical, Food, Ammo, Fuel, and Tools. Convoys route toward shortages, display their destination's demand in the contact and trade headers, pay **+35% higher barter credit** for scarce goods, and replenish town reserves upon real arrival.
+- **5 distinct special Event Caravans (`trade_fair`, `medical_aid`, `supply_drop`, `refugees`, `scavenger_haul`).** Trade Fairs (up to 12 stock items and +15% buy rates), Medical Aid convoys (large medical stock and free field treatment), Military Supply Drops (+120 escort bonus), Refugee Convoys (relief supply donations for high faction favor and rewards), and Scavenger Hauls (tools, fuel, and salvaged gear) now feature unique stock pools, dialogue, map badges, and services.
+- **Physical trunk cargo & roadside field services (`ALC_Cargo.lua`, `ALC_ContactWindow.lua`).** Caravan trunks (`TruckBed`, `Trunk`) are populated with physical cargo on spawn, and crews react if a player loots their trunk without trading. New buttons in the Convoy Contact Window let players **Help repair / refuel** broken-down convoys for cash & favor, request **Field first aid**, **Donate supplies**, **Service their own vehicle** (fuel top-up & engine patch), and request **Road intel**.
+- **Bug fixes from Steam Workshop comments:**
+  - Fixed `BodyDamage` crash (`IngameState.updateInternal`) with *Collapse - Destructible Buildings* (`@melixrism`) by keeping the seated crash-damage exemption active across all seated states (including braking, halted, and MP servers) and clearing it on exit.
+  - Restored firearm/ballistic damage against seated NPCs inside caravan vehicles (`@farleymarley1`): shots damage windows/doors first, reduce seated NPC health, and trigger caravan combat or flee reactions.
+  - Filtered modded main battle tanks (`T-90`, `Abrams`, `BTR`, `APC`) and construction machinery out of standard road convoys by default (`@TreeasaurusRex`), with a new `AllowHeavyArmor` Sandbox toggle.
+  - Fixed convoys revving and waiting on distant pedestrians with *Jeem Extension*, *Living Factions*, and *Viewpoint* (`@Orion`, `@MiX74P3`).
 
 ## New in 0.6.3
 
@@ -61,7 +72,7 @@ Save/reload recovery also preserves a seated player instead of deadlocking the c
 
 ## Requirements and installation
 
-- **Project Zomboid Build 42.21** and **Project A-Life 1.4.6** are the verified target for 0.6.3. Keep A-Life Driving enabled. Later dependency/game versions require their own verification.
+- **Project Zomboid Build 42.21** and **Project A-Life 1.4.6** are the verified target for 0.7.0. Keep A-Life Driving enabled. Later dependency/game versions require their own verification.
 - [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sharedfiles/filedetails/?id=3803984183).
 - [A-Life: Factions Expanded](https://steamcommunity.com/sharedfiles/filedetails/?id=3813871509) is optional, but recommended for the full experience.
 - [Project A-Life – Jeem Extension](https://steamcommunity.com/sharedfiles/filedetails/?id=3806944055) is optional, but recommended for the full experience; its public palette integrates with the new windows.
@@ -82,9 +93,9 @@ Right-click within about 18 tiles of a caravan to interact. Trade and ride reque
 
 ## Verification
 
-[0.6.3 current-source report](TEST_0.6.3.md). Earlier verification remains in [0.6.2](TEST_0.6.2.md), [0.6.1](TEST_0.6.1.md), two-client MP evidence in [0.6.0](TEST_0.6.0.md), and passenger save/reload and driver replacement evidence in [0.5.0](TEST_0.5.0.md).
+[0.7.0 current-source report](TEST_0.7.0.md). Earlier verification remains in [0.6.3](TEST_0.6.3.md), [0.6.2](TEST_0.6.2.md), [0.6.1](TEST_0.6.1.md), two-client MP evidence in [0.6.0](TEST_0.6.0.md), and passenger save/reload and driver replacement evidence in [0.5.0](TEST_0.5.0.md).
 
-Developer checks: `python tools/run_test.py` (442 assertions) and `python tools/pz_loadcheck.py`.
+Developer checks: `python tools/run_test.py` (469 assertions) and `python tools/pz_loadcheck.py`.
 
 ## Current limits
 

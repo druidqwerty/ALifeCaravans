@@ -14,7 +14,10 @@ require "ALifeCaravans/02_ALC_Vehicles"
 require "ALifeCaravans/03_ALC_Roads"
 require "ALifeCaravans/04_ALC_Convoy"
 require "ALifeCaravans/05_ALC_Trade"
+require "ALifeCaravans/07_ALC_Market"
 require "ALifeCaravans/ALC_Ledger"
+require "ALifeCaravans/ALC_Economy"
+require "ALifeCaravans/ALC_Cargo"
 require "ALifeCaravans/ALC_Spawn"
 require "ALifeCaravans/ALC_SOSMonitor"
 require "ALifeCaravans/ALC_Crew"
@@ -331,12 +334,24 @@ function D.snapProgress(G, caravan, x, y)
 end
 
 function D.refreshStock(caravan)
-    caravan.stock = A.Trade.stockFor(caravan.kind)
+    if A.Market and type(A.Market.stockForCaravan) == "function" then
+        caravan.stock = A.Market.stockForCaravan(caravan.kind, caravan.eventType)
+    else
+        caravan.stock = A.Trade.stockFor(caravan.kind)
+    end
 end
 
 function D.newTrip(G, caravan, fromId)
     local prevId = caravan.route and #caravan.route >= 2 and caravan.route[#caravan.route - 1] or nil
     local route = D.planRoute(G, fromId, 2 + A.rand(3), prevId)
+    if A.settings.economyEnabled and A.Economy and not caravan.hostile then
+        local bestScore = route and A.Economy.scoreRoute(G, route) or -1
+        for _ = 1, 3 do
+            local alt = D.planRoute(G, fromId, 2 + A.rand(3), prevId)
+            local s = alt and A.Economy.scoreRoute(G, alt) or -1
+            if alt and s > bestScore then route, bestScore = alt, s end
+        end
+    end
     if route == nil then return false end
     local liveX, liveY = caravan.x, caravan.y
     local isRendered = caravan.state == "rendered" and liveX ~= nil and liveY ~= nil
@@ -355,6 +370,9 @@ function D.newTrip(G, caravan, fromId)
     caravan.trip = (caravan.trip or 0) + 1
     caravan.ambush = nil
     D.refreshStock(caravan)
+    if A.Economy and type(A.Economy.prepareTrip) == "function" then
+        pcall(A.Economy.prepareTrip, G, caravan)
+    end
     D.armAmbush(caravan)
     return true
 end
@@ -429,6 +447,9 @@ function D.found(now, players)
     caravan.goals = D.goalsFor(G, caravan)
     caravan.trip = 1
     D.refreshStock(caravan)
+    if A.Economy and type(A.Economy.prepareTrip) == "function" then
+        pcall(A.Economy.prepareTrip, G, caravan)
+    end
     D.armAmbush(caravan)
     local point = D.offlinePosition(G, caravan)
     if point ~= nil then caravan.x, caravan.y = point.x, point.y end
@@ -799,6 +820,12 @@ function D.observe(G, caravan, now, players)
     if #cars > 0 then
         caravan.x, caravan.y = cars[1].x, cars[1].y
         caravan.missingSinceMs = nil
+        if A.Physics and type(A.Physics.syncVehicleOccupants) == "function" then
+            for _, row in ipairs(cars) do pcall(A.Physics.syncVehicleOccupants, row.vehicle, true) end
+        end
+        if A.Cargo and type(A.Cargo.checkTheft) == "function" then
+            pcall(A.Cargo.checkTheft, caravan, cars, players)
+        end
     else
         caravan.missingSinceMs = caravan.missingSinceMs or now
         if now - caravan.missingSinceMs > 15000 then D.release(caravan, "cars_gone") return end
@@ -837,6 +864,9 @@ function D.observe(G, caravan, now, players)
     if caravan.state == "rendered" and (caravan.arrivals or 0) >= math.max(1, #caravan.vehicleIds) then
         caravan.arrivals = 0
         caravan.trips = (caravan.trips or 0) + 1
+        if A.Economy and type(A.Economy.settleArrival) == "function" then
+            pcall(A.Economy.settleArrival, G, caravan)
+        end
         local shell = D.driverShell(caravan)
         if caravan.escort ~= nil and A.Interact ~= nil and type(A.Interact.escortReward) == "function" then
             pcall(A.Interact.escortReward, caravan, players)
@@ -849,7 +879,9 @@ function D.observe(G, caravan, now, players)
         local last = caravan.route[#caravan.route]
         if D.newTrip(G, caravan, last) then
             A.log(caravan.id, "reached", D.nodeName(G, last) .. "; next stop", caravan.destName)
-            D.halt(caravan, math.min(A.settings.haltSeconds, D.arrivalPauseSeconds), "arrived")
+            local ev = A.Market and A.Market.eventSpec(caravan.eventType) or nil
+            local pause = math.min(A.settings.haltSeconds, D.arrivalPauseSeconds + (ev and ev.haltBonusSeconds or 0))
+            D.halt(caravan, pause, "arrived")
             if shell ~= nil then A.Lines.say(shell, caravan.ridersAboard and "arrive_riders" or "arrive", { uid = caravan.actorUids[1], vars = D.vars(caravan) }) end
         else
             D.release(caravan, "no_next_trip")
@@ -891,6 +923,8 @@ function D.knownTable()
                     factionId = caravan.factionId, kind = caravan.kind, speedKmh = caravan.speedKmh, goals = goals, trip = caravan.trip or 1,
                     halted = caravan.halted == true, threatState = caravan.threatState, dest = caravan.destName, hostile = caravan.hostile == true, riders = caravan.riders == true,
                     sosState = caravan.sos and caravan.sos.state, sosOwner = caravan.sos and caravan.sos.owner,
+                    eventType = caravan.eventType, market = caravan.market,
+                    needsRepair = (A.Cargo and type(A.Cargo.needsRepairOrFuel) == "function" and A.Cargo.needsRepairOrFuel(caravan)) == true,
                     trade = caravan.stock ~= nil and #caravan.stock > 0, escort = caravan.escort ~= nil and caravan.escort.playerKey or nil }
             end
         end
@@ -907,7 +941,8 @@ function D.markerTable()
         if caravan.x ~= nil and A.Lifecycle.visible(caravan) then
             markers[#markers + 1] = { id = caravan.id, name = caravan.name, callsign = caravan.callsign, kind = caravan.kind,
                 x = math.floor(caravan.x), y = math.floor(caravan.y), heading = G and D.heading(G, caravan) or 0,
-                state = caravan.state, halted = caravan.halted == true, dest = caravan.destName, cars = #(caravan.vehicles or {}) }
+                state = caravan.state, halted = caravan.halted == true, dest = caravan.destName, cars = #(caravan.vehicles or {}),
+                eventType = caravan.eventType }
             markers[#markers].sos = A.SOS.active(caravan)
         end
     end
@@ -968,6 +1003,9 @@ function D.step(G, caravan, now, dt, players)
         local result = D.advance(G, caravan, dt, players)
         if result == "end" then
             caravan.trips = (caravan.trips or 0) + 1
+            if A.Economy and type(A.Economy.settleArrival) == "function" then
+                pcall(A.Economy.settleArrival, G, caravan)
+            end
             if caravan.trips >= A.settings.tripsPerCaravan then D.retire(caravan, "journey_complete") return end
             if not D.newTrip(G, caravan, caravan.route[#caravan.route]) then D.retire(caravan, "no_next_trip") return end
         end
@@ -1018,9 +1056,10 @@ function D.eventCaravanTick(now, players)
     if G == nil then return end
     local eventTypes = { "supply_drop", "refugees", "medical_aid", "trade_fair", "scavenger_haul" }
     local eventType = eventTypes[A.rand(#eventTypes) + 1]
+    local evSpec = A.Market and A.Market.eventSpec(eventType) or nil
     local faction, catalog = D.pickFaction()
     if faction == nil then return end
-    local class = A.Vehicles.classFor(faction)
+    local class = (evSpec and evSpec.class) or A.Vehicles.classFor(faction)
     local maxVehicles = A.settings.maxVehicles
     if class ~= "military" and class ~= "police" and maxVehicles > 2 then maxVehicles = 2 + A.rand(maxVehicles - 1) end
     local crewCount = A.settings.crewMin + A.rand(A.settings.crewMax - A.settings.crewMin + 1)
@@ -1038,9 +1077,10 @@ function D.eventCaravanTick(now, players)
     if back == nil then return end
     local route = {}
     for i = #back, 1, -1 do route[#route + 1] = back[i] end
-    local kind = KIND_BY_CLASS[class] or "trade"
+    local kind = (evSpec and evSpec.kind) or KIND_BY_CLASS[class] or "trade"
     local rules = P().FactionSpawnRules
     local hostile = rules ~= nil and type(rules.hostile) == "function" and rules.hostile(faction) == true or false
+    if eventType == "refugees" or eventType == "medical_aid" or eventType == "trade_fair" then hostile = false end
     if hostile and kind ~= "convoy" and kind ~= "patrol" then kind = "raid" end
     local speed = A.settings.cruiseKmh
     if class == "military" then speed = speed - 5 elseif class == "raider" then speed = speed + 5 end
@@ -1058,6 +1098,9 @@ function D.eventCaravanTick(now, players)
     caravan.goals = D.goalsFor(G, caravan)
     caravan.trip = 1
     D.refreshStock(caravan)
+    if A.Economy and type(A.Economy.prepareTrip) == "function" then
+        pcall(A.Economy.prepareTrip, G, caravan)
+    end
     D.armAmbush(caravan)
     local point = D.offlinePosition(G, caravan)
     if point ~= nil then caravan.x, caravan.y = point.x, point.y end

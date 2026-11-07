@@ -62,5 +62,11 @@
     "Sandbox_ALifeCaravans_NightTravelPenalty": "Ночная скорость, проценты",
     "Sandbox_ALifeCaravans_DistressCalls": "Радиосигналы бедствия",
     "Sandbox_ALifeCaravans_LivingWorld": "Реакции на зомби рядом и посещение дружественных баз",
-    "Sandbox_ALifeCaravans_BreakdownChance_tooltip": "Вероятность при проверке каждые две минуты: остановка на 45 секунд для техосмотра. Двигатель не повреждается. 0 — отключить."
+    "Sandbox_ALifeCaravans_BreakdownChance_tooltip": "Вероятность при проверке каждые две минуты: остановка на 45 секунд для техосмотра. Двигатель не повреждается. 0 — отключить.",
+    "Sandbox_ALifeCaravans_AllowHeavyArmor": "Разрешить тяжёлую бронетехнику и танки",
+    "Sandbox_ALifeCaravans_AllowHeavyArmor_tooltip": "По умолчанию выключено, чтобы модовые танки и БТР не ездили в обычных дорожных караванах. Включите, если хотите видеть тяжёлую бронетехнику у военных фракций.",
+    "Sandbox_ALifeCaravans_EconomyEnabled": "Региональная экономика спроса и предложения городов",
+    "Sandbox_ALifeCaravans_EconomyEnabled_tooltip": "Города отслеживают дефицит и избыток медицины, еды, патронов, топлива и инструментов. Караваны везут дефицитные товары и дороже скупают их у игроков.",
+    "Sandbox_ALifeCaravans_FieldServices": "Помощь с ремонтом на дороге и полевые услуги",
+    "Sandbox_ALifeCaravans_FieldServices_tooltip": "Позволяет чинить и заправлять вставшие караваны за награду, запрашивать перевязку у медиков, помогать беженцам припасами и обслуживать свою машину."
 }

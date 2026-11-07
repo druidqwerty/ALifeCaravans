@@ -11,13 +11,21 @@ local A = ALifeCaravans
 local V = { scanned = nil, scannedAtMs = -1 }
 A.Vehicles = V
 
-V.badPatterns = { "Burnt", "Smashed", "Trailer", "Wreck", "Destroyed", "Crashed", "Rusty", "Junk", "Broken" }
+V.badPatterns = {
+    "Burnt", "Smashed", "Trailer", "Wreck", "Destroyed", "Crashed", "Rusty", "Junk", "Broken",
+    "Bulldozer", "Dozer", "Excavator", "Crane", "Forklift", "Loader", "Backhoe", "Steamroller", "Combine", "Harvester", "Tractor",
+}
+
+V.heavyArmorPatterns = {
+    "Tank", "T90", "T-90", "T72", "T-72", "T80", "T-80", "T64", "T-64", "Abrams", "M1A1", "M1A2",
+    "Bradley", "Stryker", "BTR", "BMP", "BRDM", "APC", "IFV", "LAV", "Artillery", "Howitzer", "MLRS", "Tracked",
+}
 
 -- Faction class -> preferred zone keys (in order) and name patterns.
 V.classes = {
     military = {
         zones = { "military", "army", "militarybase", "fortredstone" },
-        patterns = { "M998", "M923", "M35", "Humvee", "Hummer", "Military", "Army", "APC", "Jeep", "MilTruck", "Truck_Army" },
+        patterns = { "M998", "M923", "M35", "Humvee", "Hummer", "Military", "Army", "Jeep", "MilTruck", "Truck_Army" },
         fallback = { "Base.PickUpTruck_Camo", "Base.OffRoad", "Base.PickUpVan" },
     },
     police = {
@@ -66,6 +74,24 @@ local function badName(name)
         if string.find(name, pattern, 1, true) then return true end
     end
     return false
+end
+
+function V.isHeavyArmor(name, mass)
+    if type(mass) == "number" and mass > 12000 then return true end
+    if type(name) ~= "string" then return false end
+    for _, pattern in ipairs(V.heavyArmorPatterns) do
+        if string.find(name, pattern, 1, true) then return true end
+    end
+    return false
+end
+
+function V.allowedForClass(name, class)
+    if not V.valid(name) then return false end
+    local row = V.row(name)
+    if V.isHeavyArmor(name, row and row.mass or 0) then
+        return class == "military" and A.settings.allowHeavyArmor == true
+    end
+    return true
 end
 
 -- Rows { name, seats, mass, wheels } of every usable vehicle script.
@@ -121,7 +147,7 @@ function V.seats(name)
 end
 
 -- Weighted rows from the game's zone distributions (vehicle mods add theirs there).
-function V.fromZones(zones)
+function V.fromZones(zones, class)
     local out = {}
     local table_ = type(VehicleZoneDistribution) == "table" and VehicleZoneDistribution or nil
     if table_ == nil then return out end
@@ -130,7 +156,7 @@ function V.fromZones(zones)
         local vehicles = type(entry) == "table" and type(entry.vehicles) == "table" and entry.vehicles or nil
         if vehicles ~= nil then
             for name, spec in pairs(vehicles) do
-                if type(name) == "string" and V.valid(name) then
+                if type(name) == "string" and V.allowedForClass(name, class) then
                     local weight = type(spec) == "table" and tonumber(spec.spawnChance) or 1
                     if weight > 0 then out[#out + 1] = { name = name, weight = weight } end
                 end
@@ -140,13 +166,15 @@ function V.fromZones(zones)
     return out
 end
 
-function V.fromPatterns(patterns)
+function V.fromPatterns(patterns, class)
     local out = {}
     for _, row in ipairs(V.scan().rows) do
-        for _, pattern in ipairs(patterns or {}) do
-            if string.find(row.name, pattern, 1, true) then
-                out[#out + 1] = { name = row.name, weight = 1 }
-                break
+        if V.allowedForClass(row.name, class) then
+            for _, pattern in ipairs(patterns or {}) do
+                if string.find(row.name, pattern, 1, true) then
+                    out[#out + 1] = { name = row.name, weight = 1 }
+                    break
+                end
             end
         end
     end
@@ -177,8 +205,8 @@ function V.classFor(faction)
         bloc = faction.relations.bloc
     end
     bloc = bloc and string.lower(tostring(bloc)) or ""
-    if bloc == "military" or bloc == "elite" or bloc == "army" then return "military" end
-    if bloc == "law" or bloc == "police" then return "police" end
+    if bloc == "military" or bloc == "army" then return "military" end
+    if bloc == "law" or bloc == "police" or bloc == "elite" then return "police" end
     if bloc == "rescue" or bloc == "medical" or bloc == "fire" then return "rescue" end
     if bloc == "crime" or bloc == "gang" or bloc == "raider" or bloc == "club" or bloc == "prison" then return "raider" end
     local hint = type(faction) == "table" and type(faction.support) == "table" and faction.support.vehicle or nil
@@ -191,11 +219,11 @@ end
 -- A usable vehicle script for a class; never nil while any drivable script exists.
 function V.pick(class, fraction)
     local spec = V.classes[class] or V.classes.civilian
-    local name = weighted(V.fromZones(spec.zones), fraction)
-    if name == nil then name = weighted(V.fromPatterns(spec.patterns), fraction) end
+    local name = weighted(V.fromZones(spec.zones, class), fraction)
+    if name == nil then name = weighted(V.fromPatterns(spec.patterns, class), fraction) end
     if name == nil then
         for _, candidate in ipairs(spec.fallback) do
-            if V.valid(candidate) then name = candidate break end
+            if V.allowedForClass(candidate, class) then name = candidate break end
         end
     end
     if name == nil then
@@ -203,13 +231,18 @@ function V.pick(class, fraction)
         local aliases = support and support.settings and support.settings.vehicleAliases or nil
         if type(aliases) == "table" then
             for _, candidate in pairs(aliases) do
-                if V.valid(candidate) then name = candidate break end
+                if V.allowedForClass(candidate, class) then name = candidate break end
             end
         end
     end
     if name == nil then
         local rows = V.scan().rows
-        if #rows > 0 then name = rows[A.rand(#rows) + 1].name end
+        local filtered = {}
+        for _, row in ipairs(rows) do
+            if V.allowedForClass(row.name, class) then filtered[#filtered + 1] = row end
+        end
+        if #filtered == 0 then filtered = rows end
+        if #filtered > 0 then name = filtered[A.rand(#filtered) + 1].name end
     end
     return name
 end

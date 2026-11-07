@@ -161,32 +161,47 @@ function T.rateFor(kind)
     return T.rates[kind] or T.rates.trade
 end
 
-function T.sellPrice(row, kind, favor)
-    return math.max(1, math.floor(row.value * T.rateFor(kind).sell * T.favorFactor(favor) + 0.5))
+function T.sellPrice(row, kind, favor, context)
+    local mult = 1.0
+    if type(context) == "table" and A.Market and type(A.Market.itemMultiplier) == "function" then
+        mult = A.Market.itemMultiplier(row.item or row.type, context.market, context.eventType, false)
+    end
+    return math.max(1, math.floor(row.value * T.rateFor(kind).sell * T.favorFactor(favor) * mult + 0.5))
 end
 
-function T.buyPrice(fullType, kind)
-    return math.floor(T.valueOf(fullType) * T.rateFor(kind).buy + 0.5)
+function T.buyPrice(fullType, kind, context)
+    local mult = 1.0
+    if fullType ~= T.currency and type(context) == "table" and A.Market and type(A.Market.itemMultiplier) == "function" then
+        mult = A.Market.itemMultiplier(fullType, context.market, context.eventType, true)
+    end
+    local val = T.valueOf(fullType)
+    local raw = math.floor(val * T.rateFor(kind).buy * mult + 0.5)
+    if fullType ~= T.currency and type(context) == "table" and context.favor ~= nil then
+        local sellAt = T.sellPrice({ item = fullType, value = val }, kind, context.favor, context)
+        if sellAt > 1 and raw >= sellAt then raw = sellAt - 1 end
+    end
+    return raw
 end
 
 -- Quote a deal: take = { [stockIndex] = count }, give = { { type = ..., count = n }, ... }.
 -- Returns { ok, reason, cost, credit, balance, takeRows, giveRows }.
-function T.quote(stock, kind, favor, take, give)
+function T.quote(stock, kind, favor, take, give, context)
     if type(stock) ~= "table" or (take ~= nil and type(take) ~= "table") or (give ~= nil and type(give) ~= "table") then
         return { ok = false, reason = "bad_request" }
     end
+    local ctx = type(context) == "table" and { market = context.market, eventType = context.eventType, favor = favor } or nil
     local out = { cost = 0, credit = 0, takeRows = {}, giveRows = {} }
     local taken, offered, entries = {}, {}, 0
     for rawIndex, rawCount in pairs(take or {}) do
         entries = entries + 1
         local index, count = tonumber(rawIndex), tonumber(rawCount)
-        if entries > T.maxStock or index == nil or index ~= index or index % 1 ~= 0 or count == nil or count ~= count
+        if entries > 16 or index == nil or index ~= index or index % 1 ~= 0 or count == nil or count ~= count
             or count % 1 ~= 0 or count <= 0 or count > 999 or taken[index] then return { ok = false, reason = "bad_take" } end
         taken[index] = true
         local row = stock[index]
         if row == nil then return { ok = false, reason = "bad_take" } end
         if count > row.count then return { ok = false, reason = "out_of_stock" } end
-        local price = T.sellPrice(row, kind, favor)
+        local price = tonumber(row.price) or T.sellPrice(row, kind, favor, ctx)
         out.cost = out.cost + price * count
         out.takeRows[#out.takeRows + 1] = { index = tonumber(index), item = row.item, name = row.name, count = count, price = price }
     end
@@ -199,7 +214,7 @@ function T.quote(stock, kind, favor, take, give)
         local count = tonumber(offer.count)
         if type(offer.type) ~= "string" or #offer.type > 128 or count == nil or count ~= count or count % 1 ~= 0
             or count <= 0 or count > 999 or not T.exists(offer.type) then return { ok = false, reason = "bad_give" } end
-        local price = T.buyPrice(offer.type, kind)
+        local price = T.buyPrice(offer.type, kind, ctx)
         if price <= 0 then return { ok = false, reason = "unwanted:" .. offer.type } end
         out.credit = out.credit + price * count
         local previous = offered[offer.type]

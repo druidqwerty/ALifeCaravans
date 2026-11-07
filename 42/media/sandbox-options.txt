@@ -354,3 +354,28 @@ option ALifeCaravans.SOSEscapeTiles
 	page = ALifeCaravans,
 	translation = ALifeCaravans_SOSEscapeTiles,
 }
+
+option ALifeCaravans.AllowHeavyArmor
+{
+	type = boolean,
+	default = false,
+	page = ALifeCaravans,
+	translation = ALifeCaravans_AllowHeavyArmor,
+}
+
+option ALifeCaravans.EconomyEnabled
+{
+	type = boolean,
+	default = true,
+	page = ALifeCaravans,
+	translation = ALifeCaravans_EconomyEnabled,
+}
+
+option ALifeCaravans.FieldServices
+{
+	type = boolean,
+	default = true,
+	page = ALifeCaravans,
+	translation = ALifeCaravans_FieldServices,
+}
+

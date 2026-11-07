@@ -74,6 +74,11 @@ L.catalog = {
     event_medical_aid = { count = 2 },
     event_trade_fair = { count = 2 },
     event_scavenger_haul = { count = 2 },
+    repair_thanks = { count = 2 },
+    repair_need_tools = { count = 2 },
+    aid_done = { count = 2 },
+    vehicle_service_done = { count = 2 },
+    intel_report = { count = 2 },
 }
 
 -- Every translation key the catalog needs (for the tests and the status).

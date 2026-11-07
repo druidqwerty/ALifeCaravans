@@ -21,6 +21,12 @@ function D.rows(kind,args)
     for _,field in ipairs(fields) do
         rows[#rows+1]={label=L.ui(field[2],field[3]),value=tostring(args[field[1]] or "-")}
     end
+    if args.eventType and args.eventType ~= "" then
+        rows[#rows+1]={label=L.ui("detail_event","Special mission"),value=L.ui("event_"..tostring(args.eventType),tostring(args.eventType))}
+    end
+    if args.marketShortage and args.marketShortage ~= "" then
+        rows[#rows+1]={label=L.ui("detail_shortage","Destination demand"),value=L.ui("cat_"..tostring(args.marketShortage),tostring(args.marketShortage))}
+    end
     return L.ui("panel_status","Detailed status"),rows
 end
 
