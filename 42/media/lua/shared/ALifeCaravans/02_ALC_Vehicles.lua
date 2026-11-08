@@ -21,6 +21,12 @@ V.heavyArmorPatterns = {
     "Bradley", "Stryker", "BTR", "BMP", "BRDM", "APC", "IFV", "LAV", "Artillery", "Howitzer", "MLRS", "Tracked",
 }
 
+V.armoredPatterns = {
+    "Armor", "Armour", "Armored", "Armoured", "MRAP", "BearCat", "SWAT", "Commando", "V100", "M113",
+    "M998", "Humvee", "Hummer", "Oshkosh", "M923", "M35", "Hemtt", "HEMTT", "MilTruck", "Truck_Army",
+    "Tactical", "Military", "Turret", "Guntruck", "UpArmored",
+}
+
 -- Faction class -> preferred zone keys (in order) and name patterns.
 V.classes = {
     military = {
@@ -85,11 +91,28 @@ function V.isHeavyArmor(name, mass)
     return false
 end
 
+function V.isArmoredVehicle(name, mass)
+    if V.isHeavyArmor(name, mass) then return true end
+    if type(name) ~= "string" then return false end
+    for _, pattern in ipairs(V.armoredPatterns) do
+        if string.find(name, pattern, 1, true) then return true end
+    end
+    return false
+end
+
+function V.armoredChance()
+    return A.clamp(A.settings and A.settings.armoredVehicleChance, 0, 100, 25)
+end
+
 function V.allowedForClass(name, class)
     if not V.valid(name) then return false end
     local row = V.row(name)
-    if V.isHeavyArmor(name, row and row.mass or 0) then
-        return class == "military" and A.settings.allowHeavyArmor == true
+    local mass = row and row.mass or 0
+    if V.isHeavyArmor(name, mass) then
+        if class ~= "military" or A.settings.allowHeavyArmor ~= true then return false end
+    end
+    if V.isArmoredVehicle(name, mass) and V.armoredChance() <= 0 then
+        return false
     end
     return true
 end
@@ -151,6 +174,7 @@ function V.fromZones(zones, class)
     local out = {}
     local table_ = type(VehicleZoneDistribution) == "table" and VehicleZoneDistribution or nil
     if table_ == nil then return out end
+    local armorFactor = V.armoredChance() / 100
     for _, zone in ipairs(zones or {}) do
         local entry = table_[zone]
         local vehicles = type(entry) == "table" and type(entry.vehicles) == "table" and entry.vehicles or nil
@@ -158,6 +182,8 @@ function V.fromZones(zones, class)
             for name, spec in pairs(vehicles) do
                 if type(name) == "string" and V.allowedForClass(name, class) then
                     local weight = type(spec) == "table" and tonumber(spec.spawnChance) or 1
+                    local row = V.row(name)
+                    if V.isArmoredVehicle(name, row and row.mass or 0) then weight = weight * armorFactor end
                     if weight > 0 then out[#out + 1] = { name = name, weight = weight } end
                 end
             end
@@ -168,11 +194,13 @@ end
 
 function V.fromPatterns(patterns, class)
     local out = {}
+    local armorFactor = V.armoredChance() / 100
     for _, row in ipairs(V.scan().rows) do
         if V.allowedForClass(row.name, class) then
             for _, pattern in ipairs(patterns or {}) do
                 if string.find(row.name, pattern, 1, true) then
-                    out[#out + 1] = { name = row.name, weight = 1 }
+                    local weight = V.isArmoredVehicle(row.name, row.mass) and armorFactor or 1
+                    if weight > 0 then out[#out + 1] = { name = row.name, weight = weight } end
                     break
                 end
             end
@@ -216,6 +244,40 @@ function V.classFor(faction)
     return "civilian"
 end
 
+function V.pickUnarmored(class, fraction)
+    local spec = V.classes[class] or V.classes.civilian
+    local function filterUnarmored(rows)
+        local out = {}
+        for _, r in ipairs(rows or {}) do
+            local vrow = V.row(r.name)
+            if not V.isArmoredVehicle(r.name, vrow and vrow.mass or 0) then
+                out[#out + 1] = r
+            end
+        end
+        return out
+    end
+    local name = weighted(filterUnarmored(V.fromZones(spec.zones, class)), fraction)
+    if name == nil then name = weighted(filterUnarmored(V.fromPatterns(spec.patterns, class)), fraction) end
+    if name == nil then
+        for _, candidate in ipairs(spec.fallback or {}) do
+            local vrow = V.row(candidate)
+            if V.valid(candidate) and not V.isArmoredVehicle(candidate, vrow and vrow.mass or 0) then
+                name = candidate
+                break
+            end
+        end
+    end
+    if name == nil then
+        local rows = V.scan().rows
+        local unarmored = {}
+        for _, row in ipairs(rows) do
+            if not V.isArmoredVehicle(row.name, row.mass) then unarmored[#unarmored + 1] = row end
+        end
+        if #unarmored > 0 then name = unarmored[A.rand(#unarmored) + 1].name end
+    end
+    return name
+end
+
 -- A usable vehicle script for a class; never nil while any drivable script exists.
 function V.pick(class, fraction)
     local spec = V.classes[class] or V.classes.civilian
@@ -243,6 +305,16 @@ function V.pick(class, fraction)
         end
         if #filtered == 0 then filtered = rows end
         if #filtered > 0 then name = filtered[A.rand(#filtered) + 1].name end
+    end
+    if name ~= nil then
+        local row = V.row(name)
+        local chance = V.armoredChance()
+        if V.isArmoredVehicle(name, row and row.mass or 0) and chance < 100 then
+            if chance <= 0 or A.rand(100) >= chance then
+                local plain = V.pickUnarmored(class, fraction)
+                if plain ~= nil then name = plain end
+            end
+        end
     end
     return name
 end

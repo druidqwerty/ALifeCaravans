@@ -363,6 +363,26 @@ option ALifeCaravans.AllowHeavyArmor
 	translation = ALifeCaravans_AllowHeavyArmor,
 }
 
+option ALifeCaravans.ArmoredVehicleChance
+{
+	type = integer,
+	min = 0,
+	max = 100,
+	default = 25,
+	page = ALifeCaravans,
+	translation = ALifeCaravans_ArmoredVehicleChance,
+}
+
+option ALifeCaravans.TrophyVehicleCondition
+{
+	type = integer,
+	min = 10,
+	max = 100,
+	default = 40,
+	page = ALifeCaravans,
+	translation = ALifeCaravans_TrophyVehicleCondition,
+}
+
 option ALifeCaravans.EconomyEnabled
 {
 	type = boolean,

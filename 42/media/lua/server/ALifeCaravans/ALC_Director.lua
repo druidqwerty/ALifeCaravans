@@ -609,6 +609,11 @@ function D.abandonCar(caravan, vehicleId, why)
         caravan.state = "stranded"
         caravan.strandedAtMs = A.now()
         A.log("stranded:", caravan.id, why)
+    elseif why ~= "crew_dead" and A.Crew and type(A.Crew.queue) == "function" then
+        local now = A.now()
+        for _, remainingId in ipairs(caravan.vehicleIds or {}) do
+            A.Crew.queue(caravan, remainingId, "consolidate_abandoned", now, 800)
+        end
     end
     D.publishDirty = true
 end
@@ -1177,7 +1182,7 @@ function D.breakdownTick(caravan, now, players)
     D.halt(caravan, 45, "roadside_inspection")
     if not D.ridersAboard(caravan) and A.Spawn and type(A.Spawn.dismount) == "function" then
         local cx, cy = A.xyz(car)
-        A.Spawn.dismount(caravan, { x = cx or caravan.x, y = cy or caravan.y })
+        A.Spawn.dismount(caravan, { x = cx or caravan.x, y = cy or caravan.y }, vehicleId)
     end
     D.publishDirty = true
 end

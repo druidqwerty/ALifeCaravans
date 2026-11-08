@@ -292,4 +292,133 @@ return function(check, newVehicle)
     check("arrival settles remaining cargo into destination town supply once", settled == true and added > 0 and townB.supplies.medical > medBefore)
     local settledDup = E.settleArrival(ProjectALife.RoadGraph, ecoCaravan)
     check("duplicate arrival settlement is idempotent", settledDup == false)
+
+    -- 6. v0.7.2: Armored KI5 vehicle spawn chance & TrophyVehicleCondition post-defeat wear (@PriestSmokey)
+    V.scanned = {
+        rows = {
+            { name = "Base.92amgeneralM998", seats = 4, mass = 3500, wheels = 4 },
+            { name = "Base.StepVan_SWAT_Armored", seats = 6, mass = 4800, wheels = 4 },
+            { name = "Base.PickUpTruck", seats = 2, mass = 2100, wheels = 4 },
+            { name = "Base.OffRoad", seats = 2, mass = 1900, wheels = 4 },
+            { name = "Base.CarNormal", seats = 4, mass = 1600, wheels = 4 },
+        },
+        byName = {},
+    }
+    for _, r in ipairs(V.scanned.rows) do V.scanned.byName[r.name] = r end
+    check("KI5 M998 and SWAT Armored recognized as armored vehicles", V.isArmoredVehicle("Base.92amgeneralM998", 3500) and V.isArmoredVehicle("Base.StepVan_SWAT_Armored", 4800))
+    check("ordinary pickup and sedan are not classified as armored", not V.isArmoredVehicle("Base.PickUpTruck", 2100) and not V.isArmoredVehicle("Base.CarNormal", 1600))
+    A.settings.armoredVehicleChance = 0
+    check("ArmoredVehicleChance=0 blocks armored vehicles in allowedForClass", not V.allowedForClass("Base.92amgeneralM998", "military") and V.allowedForClass("Base.PickUpTruck", "military"))
+    local pickedZero = V.pick("military", 0.05)
+    check("ArmoredVehicleChance=0 picks unarmored fallback for military convoy", pickedZero ~= nil and not V.isArmoredVehicle(pickedZero, 2000), tostring(pickedZero))
+    A.settings.armoredVehicleChance = 100
+    check("ArmoredVehicleChance=100 allows armored vehicles", V.allowedForClass("Base.92amgeneralM998", "military"))
+    A.settings.armoredVehicleChance = 25
+    V.scan(true)
+
+    -- TrophyVehicleCondition post-defeat wear on armored KI5 car
+    A.settings.trophyVehicleCondition = 40
+    local ki5Car = newVehicle("Base.92amgeneralM998", 140, 100)
+    local partConds = { Engine = 100, Battery = 100, TireFrontLeft = 95, DoorFrontLeft = 90 }
+    local partIds = { "Engine", "Battery", "TireFrontLeft", "DoorFrontLeft" }
+    local batDelta = 1.0
+    local tankFuel = 50.0
+    ki5Car.getScript = function() return { getFullName = function() return "Base.92amgeneralM998" end } end
+    ki5Car.getPartCount = function() return #partIds end
+    ki5Car.getPartByIndex = function(_, idx)
+        local pid = partIds[idx + 1]
+        return {
+            getId = function() return pid end,
+            getCondition = function() return partConds[pid] end,
+            setCondition = function(_, c) partConds[pid] = c end,
+            getInventoryItem = function()
+                return {
+                    setCondition = function(_, c) partConds[pid] = c end,
+                    getUsedDelta = function() return batDelta end,
+                    setUsedDelta = function(_, d) batDelta = d end,
+                }
+            end,
+        }
+    end
+    ki5Car.getPartById = function(_, pid)
+        if pid == "GasTank" then
+            return {
+                getContainerCapacity = function() return 60.0 end,
+                getContainerContentAmount = function() return tankFuel end,
+                setContainerContentAmount = function(_, f) tankFuel = f end,
+            }
+        end
+        return nil
+    end
+    local wore = A.Lifecycle.applyDefeatWear(ki5Car, ecoCaravan)
+    check("applyDefeatWear degrades defeated armored car parts and fuel below TrophyVehicleCondition cap",
+        wore == true and partConds.Engine <= 30 and partConds.TireFrontLeft <= 30 and tankFuel <= 15.0 and batDelta <= 0.35,
+        string.format("eng=%s tire=%s fuel=%s", tostring(partConds.Engine), tostring(partConds.TireFrontLeft), tostring(tankFuel)))
+    local woreAgain = A.Lifecycle.applyDefeatWear(ki5Car, ecoCaravan)
+    check("applyDefeatWear is idempotent per vehicle", woreAgain == false)
+
+    -- 7. v0.7.2: Multi-vehicle convoy per-car crew ownership & formation boarding guard (@PriestSmokey)
+    local convCar1 = newVehicle("Base.PickUpTruck", 150, 100)
+    local convCar2 = newVehicle("Base.VanSeats", 142, 100)
+    for _, u in ipairs({ "c1_drv", "c1_pas", "c2_drv", "c2_pas" }) do
+        ACTORS[u] = { uid = u, factionId = "f_army", lifecycle = "active", generation = 1, revision = 1, memory = {} }
+        local sx = (u == "c1_drv" or u == "c1_pas") and 150 or 142
+        SHELLS[u] = {
+            uid = u, generation = 1, x = sx, y = 100, z = 0, dead = false, vehicle = nil,
+            getX = function(s) return s.x end, getY = function(s) return s.y end, getZ = function(s) return s.z end,
+            isDead = function(s) return s.dead end, getVehicle = function(s) return s.vehicle end,
+            getModData = function() return { ProjectALifeUID = u, ProjectALifeGeneration = 1, ProjectALifeOwned = true } end,
+        }
+    end
+    local multiCaravan = L.create({
+        name = "Two Car Convoy", factionId = "f_army", factionName = "Two Car Convoy",
+        kind = "convoy", class = "military", hostile = false,
+        vehicles = { "Base.PickUpTruck", "Base.VanSeats" }, crew = { "p1", "p2", "p3", "p4" },
+        speedKmh = 35, route = { "townA", "townB" }, leg = 1, t = 0.3, x = 150, y = 100,
+        goals = { { x = 220, y = 100 }, { x = 260, y = 100 } }, goalIndex = 1,
+        state = "rendered", vehicleIds = { convCar1:getId(), convCar2:getId() },
+        actorUids = { "c1_drv", "c1_pas", "c2_drv", "c2_pas" },
+    })
+    A.tagVehicle(convCar1, multiCaravan.id, 1)
+    A.tagVehicle(convCar2, multiCaravan.id, 2)
+    A.Spawn.rememberCarCrew(multiCaravan, convCar1:getId(), { { uid = "c1_drv" }, { uid = "c1_pas" } })
+    A.Spawn.rememberCarCrew(multiCaravan, convCar2:getId(), { { uid = "c2_drv" }, { uid = "c2_pas" } })
+    -- Even when Car 2 recrews alone with 4 seats while Car 1's crew is on foot, Car 2 must NOT steal Car 1's crew!
+    local reserved = {}
+    local okRecrew2, count2 = A.Spawn.recrew(multiCaravan, convCar2:getId(), { { x = 160, y = 100 }, { x = 190, y = 100 } }, 4, reserved)
+    check("Car 2 recrews only its own 2 crew members and never steals Car 1's crew",
+        okRecrew2 == true and count2 == 2 and reserved["c2_drv"] == true and reserved["c2_pas"] == true
+        and not reserved["c1_drv"] and not reserved["c1_pas"], tostring(count2))
+    local okRecrew1, count1 = A.Spawn.recrew(multiCaravan, convCar1:getId(), { { x = 165, y = 100 }, { x = 195, y = 100 } }, 4, reserved)
+    check("Car 1 retains and recrews its own 2 crew members without being left behind",
+        okRecrew1 == true and count1 == 2 and reserved["c1_drv"] == true and reserved["c1_pas"] == true, tostring(count1))
+
+    -- Formation speed holds 0 while another car in the same convoy is boarding/exiting
+    local grp = {
+        { id = convCar1:getId(), entry = { speedKmh = 35 }, s = { phase = "approach" }, x = 150, y = 100, index = 1 },
+        { id = convCar2:getId(), entry = { speedKmh = 35 }, s = { phase = "driving" }, x = 130, y = 100, index = 2 },
+    }
+    local fCruise, _, fFactor = C.formationSpeed(grp, 2)
+    check("follower car holds speed=0 while lead car crew is boarding/exiting", fCruise == 0 and fFactor == 0)
+
+    -- VehicleRules.strike hook prevents caravan car from running over caravan NPC on foot
+    local struck = false
+    ProjectALife.VehicleRules = {
+        strike = function() struck = true return true end,
+    }
+    C.hooksInstalled = false
+    C.installHooks()
+    C.known[convCar2:getId()] = { caravanId = multiCaravan.id, index = 2 }
+    local hitRes = ProjectALife.VehicleRules.strike(SHELLS["c1_drv"], convCar2, 35, A.now())
+    check("VehicleRules.strike hook blocks caravan car from killing caravan NPC on foot", hitRes == false and struck == false)
+
+    -- Per-car dismount objective keeps Car 1 crew at Car 1 (150,100) and Car 2 crew at Car 2 (142,100)
+    multiCaravan.state = "rendered"
+    multiCaravan.ambush = nil
+    A.Spawn.dismount(multiCaravan, { x = 142, y = 100 })
+    local obj1 = ACTORS["c1_drv"].memory.arrivalObjective
+    local obj2 = ACTORS["c2_drv"].memory.arrivalObjective
+    check("non-combat dismount keeps Car 1 crew objective at Car 1 instead of walking to Car 2",
+        obj1 ~= nil and math.abs(obj1.x - 150) < 0.1 and obj2 ~= nil and math.abs(obj2.x - 142) < 0.1,
+        string.format("obj1=%s obj2=%s", tostring(obj1 and obj1.x), tostring(obj2 and obj2.x)))
 end

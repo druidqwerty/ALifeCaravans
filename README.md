@@ -8,7 +8,17 @@ Faction caravans for [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sh
 
 Free and open source. The code is developed with AI; direction, testing and time are mine. [Support the mods on Boosty](https://boosty.to/lrgpp).
 
-> **0.7.1 — Regional town supply & demand economy, 5 distinct special Event Caravans, physical trunk cargo, roadside repair/medical/vehicle/intel services, and bug fixes from Steam comments.** See [verification and limits](TEST_0.7.1.md).
+> **0.7.2 — Multi-car convoy crew ownership & boarding safety fix, plus Sandbox settings for Armored KI5 vehicle spawn chance (`ArmoredVehicleChance`) and post-defeat salvage vehicle condition (`TrophyVehicleCondition`).** See [verification and limits](TEST_0.7.2.md).
+
+## New in 0.7.2
+
+- **Multi-car convoy crew ownership & safe boarding (`ALC_Spawn.lua`, `ALC_Crew.lua`, `ALC_Director.lua`, `04_ALC_Convoy.lua`).** Fixed a bug reported by `@PriestSmokey` where survivors in a 2+ vehicle convoy could exit the lead car, leave it behind, and die while trying to board the second car:
+  - Each vehicle in a convoy now remembers its own assigned home crew (`caravan.carCrews`); follower cars never claim the lead car's driver or passengers while the lead car is still a working convoy vehicle, and recrew requests process in convoy order (lead car first).
+  - Non-combat roadside stops (`roadside_inspection`, `scavenge_stop`, `safehouse_visit`) now keep each survivor's dismount target beside their own assigned car instead of walking down the road to another vehicle in the convoy.
+  - All vehicles in a convoy hold formation (`speed = 0`) while any car in the group is boarding or exiting, moving cars brake to a stop before boarding begins, caravan vehicles no longer run over friendly caravan NPCs on foot (`VehicleRules.strike` guard), and brief curb/corpse bounces no longer trigger a false tilt abort.
+- **Armored KI5 vehicle spawn chance & salvage condition settings (`02_ALC_Vehicles.lua`, `ALC_Lifecycle.lua`, `sandbox-options.txt`).** Added two live-polled Sandbox options requested by `@PriestSmokey`:
+  - `ArmoredVehicleChance` (`0–100%`, default `25%`): controls how often caravans spawn armored or tactical vehicles (such as KI5 armored cars, Humvees, SWAT trucks, MRAPs, or military trucks), falling back to standard unarmored vehicles (`0` disables armored vehicles completely).
+  - `TrophyVehicleCondition` (`10–100%`, default `40%`): caps the part, battery, and fuel condition left on caravan vehicles after their entire crew is wiped out (with extra battle wear on armored vehicles) so defeated convoys leave battle-damaged salvage rather than pristine free armored cars (`100` keeps full condition).
 
 ## New in 0.7.1
 
@@ -72,7 +82,7 @@ Save/reload recovery also preserves a seated player instead of deadlocking the c
 
 ## Requirements and installation
 
-- **Project Zomboid Build 42.21** and **Project A-Life 1.4.6** are the verified target for 0.7.1. Keep A-Life Driving enabled. Later dependency/game versions require their own verification.
+- **Project Zomboid Build 42.21** and **Project A-Life 1.4.6** are the verified target for 0.7.2. Keep A-Life Driving enabled. Later dependency/game versions require their own verification.
 - [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sharedfiles/filedetails/?id=3803984183).
 - [A-Life: Factions Expanded](https://steamcommunity.com/sharedfiles/filedetails/?id=3813871509) is optional, but recommended for the full experience.
 - [Project A-Life – Jeem Extension](https://steamcommunity.com/sharedfiles/filedetails/?id=3806944055) is optional, but recommended for the full experience; its public palette integrates with the new windows.
@@ -93,9 +103,9 @@ Right-click within about 18 tiles of a caravan to interact. Trade and ride reque
 
 ## Verification
 
-[0.7.1 current-source report](TEST_0.7.1.md). Earlier verification remains in [0.6.3](TEST_0.6.3.md), [0.6.2](TEST_0.6.2.md), [0.6.1](TEST_0.6.1.md), two-client MP evidence in [0.6.0](TEST_0.6.0.md), and passenger save/reload and driver replacement evidence in [0.5.0](TEST_0.5.0.md).
+[0.7.2 current-source report](TEST_0.7.2.md). Earlier verification remains in [0.7.1](TEST_0.7.1.md), [0.6.3](TEST_0.6.3.md), [0.6.2](TEST_0.6.2.md), [0.6.1](TEST_0.6.1.md), two-client MP evidence in [0.6.0](TEST_0.6.0.md), and passenger save/reload and driver replacement evidence in [0.5.0](TEST_0.5.0.md).
 
-Developer checks: `python tools/run_test.py` (469 assertions) and `python tools/pz_loadcheck.py`.
+Developer checks: `python tools/run_test.py` (486 assertions) and `python tools/pz_loadcheck.py`.
 
 ## Current limits
 

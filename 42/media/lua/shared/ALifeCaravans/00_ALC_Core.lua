@@ -8,7 +8,7 @@ ALifeCaravans = ALifeCaravans or {}
 local A = ALifeCaravans
 
 A.MOD_ID = "ALifeCaravans"
-A.VERSION = "0.7.1"
+A.VERSION = "0.7.2"
 A.TAG = "[ALC]"
 A.MODULE = "ALifeCaravans"        -- client<->server command module name
 A.MODDATA_ID = "ALifeCaravanId"   -- vehicle ModData key (authoritative side only)
@@ -54,6 +54,8 @@ A.defaults = {
     sosEscapeTiles = 80,
     livingWorld = true,           -- caravans interact with world (zombie hordes, player bases)
     allowHeavyArmor = false,      -- allow modded APCs/tanks for military convoys
+    armoredVehicleChance = 25,    -- % chance for armored/tactical vehicles (KI5, Humvees, SWAT, etc.)
+    trophyVehicleCondition = 40,  -- max part/fuel % condition on cars left after crew is wiped out
     economyEnabled = true,        -- regional town supply & demand market
     fieldServices = true,         -- roadside first aid, repair/refuel assistance, and road intel
 }
@@ -240,6 +242,8 @@ function A.refreshSettings()
     s.sosEscapeTiles = A.clamp(sandbox.SOSEscapeTiles, 40, 300, d.sosEscapeTiles)
     s.livingWorld = sandbox.LivingWorld ~= false
     s.allowHeavyArmor = sandbox.AllowHeavyArmor == true
+    s.armoredVehicleChance = A.clamp(sandbox.ArmoredVehicleChance, 0, 100, d.armoredVehicleChance)
+    s.trophyVehicleCondition = A.clamp(sandbox.TrophyVehicleCondition, 10, 100, d.trophyVehicleCondition)
     s.economyEnabled = sandbox.EconomyEnabled ~= false
     s.fieldServices = sandbox.FieldServices ~= false
     return true

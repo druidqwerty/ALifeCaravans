@@ -50,6 +50,85 @@ function S.caravanFor(tag)
     return A.Ledger ~= nil and A.Ledger.get(tag) or nil
 end
 
+function S.rememberCarCrew(caravan, vehicleId, crewSpecs)
+    if type(caravan) ~= "table" or vehicleId == nil or type(crewSpecs) ~= "table" then return end
+    caravan.carCrews = caravan.carCrews or {}
+    local list = {}
+    local seen = {}
+    for _, spec in ipairs(crewSpecs) do
+        local uid = type(spec) == "table" and spec.uid or (type(spec) == "string" and spec or nil)
+        if type(uid) == "string" and uid ~= "" and not seen[uid] then
+            seen[uid] = true
+            list[#list + 1] = uid
+        end
+    end
+    if #list > 0 then
+        caravan.carCrews[tostring(vehicleId)] = list
+    end
+end
+
+function S.homeCrewSet(caravan, vehicleId)
+    local out = {}
+    if type(caravan) ~= "table" or vehicleId == nil then return out end
+    local key = tostring(vehicleId)
+    local list = type(caravan.carCrews) == "table" and caravan.carCrews[key] or nil
+    if type(list) == "table" and #list > 0 then
+        for idx, uid in ipairs(list) do
+            if type(uid) == "string" then out[uid] = idx end
+        end
+        return out
+    end
+    local owner = S.sessionOf(vehicleId)
+    local binding = owner and owner.bindings and owner.bindings[vehicleId] or nil
+    if binding and type(binding.crew) == "table" then
+        for idx, spec in ipairs(binding.crew) do
+            if type(spec) == "table" and type(spec.uid) == "string" then
+                out[spec.uid] = idx
+            end
+        end
+    end
+    return out
+end
+
+function S.reservedByOtherCars(caravan, vehicleId)
+    local otherHome = {}
+    local unassignedOtherCars = 0
+    if type(caravan) ~= "table" then return otherHome, 0 end
+    local p = P()
+    local registry = p and p.ActorRegistry or nil
+    local owned = {}
+    for _, uid in ipairs(caravan.actorUids or {}) do owned[uid] = true end
+    for _, otherId in ipairs(caravan.vehicleIds or {}) do
+        if otherId ~= vehicleId then
+            local otherCar = type(getVehicleById) == "function" and getVehicleById(otherId) or nil
+            local validCar = otherCar ~= nil and A.vehicleTag(otherCar) == caravan.id
+            if validCar then
+                local home = S.homeCrewSet(caravan, otherId)
+                local livingHome = 0
+                for uid in pairs(home) do
+                    if owned[uid] then
+                        local alive = true
+                        if registry ~= nil then
+                            local ok, actor = pcall(registry.read, uid)
+                            if ok and actor and actor.lifecycle == "dead" then alive = false end
+                        end
+                        if alive then
+                            otherHome[uid] = otherId
+                            livingHome = livingHome + 1
+                        end
+                    end
+                end
+                if livingHome == 0 then
+                    local hasDriver = false
+                    pcall(function() hasDriver = otherCar:getDriver() ~= nil end)
+                    if not hasDriver then unassignedOtherCars = unassignedOtherCars + 1 end
+                end
+            end
+        end
+    end
+    return otherHome, unassignedOtherCars
+end
+
 function S.install()
     if S.installed then return true end
     local p = P()
@@ -147,6 +226,10 @@ function S.install()
                 old.systemArrival = true
             end
             local s, why = original(owner, old, car, crew, token, route, boarding)
+            if s ~= nil and caravan ~= nil and car ~= nil then
+                local okId, vid = pcall(function() return car:getId() end)
+                if okId and vid ~= nil then S.rememberCarCrew(caravan, vid, crew) end
+            end
             if car ~= nil and A.Physics and type(A.Physics.syncVehicleOccupants) == "function" then
                 pcall(A.Physics.syncVehicleOccupants, car, true)
             end
@@ -483,15 +566,26 @@ function S.teardown(caravan, reason)
     caravan.actorUids = {}
     caravan.vehicleIds = {}
     caravan.abandoned = {}
+    caravan.carCrews = {}
     caravan.requestId = nil
     return kept
 end
 
 -- The crew leaves the cars and goes to `objective` on foot (fight or flee).
-function S.dismount(caravan, objective)
+function S.dismount(caravan, objective, onlyVehicleId)
     local p = P()
     local client = p and p.DrivingDemoClient
-    for _, id in ipairs(caravan.vehicleIds or {}) do
+    local ids = onlyVehicleId ~= nil and { onlyVehicleId } or (caravan.vehicleIds or {})
+    local dismountedUids = {}
+    local carPosByUid = {}
+    for _, id in ipairs(ids) do
+        local car = type(getVehicleById) == "function" and getVehicleById(id) or nil
+        local cx, cy = A.xyz(car)
+        local home = S.homeCrewSet(caravan, id)
+        for uid in pairs(home) do
+            dismountedUids[uid] = true
+            if cx ~= nil then carPosByUid[uid] = { x = cx, y = cy } end
+        end
         local owner, s = S.sessionOf(id)
         if s ~= nil then
             if type(isServer) == "function" and isServer() then
@@ -503,14 +597,21 @@ function S.dismount(caravan, objective)
             end
         end
     end
+    local combatDismount = caravan.state == "fighting"
+        or (caravan.ambush ~= nil and caravan.ambush.state == "fighting")
     local registry = p and p.ActorRegistry
-    if registry ~= nil and objective ~= nil then
+    if registry ~= nil and (objective ~= nil or not A.isEmpty(carPosByUid)) then
         for _, uid in ipairs(caravan.actorUids or {}) do
-            local ok, actor = pcall(registry.read, uid)
-            if ok and actor ~= nil and actor.lifecycle ~= "dead" then
-                pcall(registry.updateTransient, uid, actor.revision, function(record)
-                    record.memory.arrivalObjective = { x = objective.x, y = objective.y, z = 0, untilMs = A.now() + 300000 }
-                end)
+            if onlyVehicleId == nil or dismountedUids[uid] then
+                local target = (not combatDismount and carPosByUid[uid]) or objective
+                if target ~= nil then
+                    local ok, actor = pcall(registry.read, uid)
+                    if ok and actor ~= nil and actor.lifecycle ~= "dead" then
+                        pcall(registry.updateTransient, uid, actor.revision, function(record)
+                            record.memory.arrivalObjective = { x = target.x, y = target.y, z = 0, untilMs = A.now() + 300000 }
+                        end)
+                    end
+                end
             end
         end
     end
@@ -631,12 +732,34 @@ function S.recrew(caravan, vehicleId, route, limit, reserved)
     local cx, cy = A.xyz(car)
     if cx == nil then return false, "no_position" end
     local candidates = S.survivors(caravan, cx, cy, 100)
-    -- crew already seated in another caravan car stays there
+    local home = S.homeCrewSet(caravan, vehicleId)
+    local otherHome, unassignedOtherCars = S.reservedByOtherCars(caravan, vehicleId)
+    -- Crew already seated in another caravan car or assigned as the home crew
+    -- of another working convoy vehicle stays with its own car.
     local free = {}
     for _, row in ipairs(candidates) do
         local other = row.inCar
-        if other == car or (other == nil and not (reserved and reserved[row.uid])) then free[#free + 1] = row end
+        if other == car then
+            free[#free + 1] = row
+        elseif other == nil and not (reserved and reserved[row.uid]) and not otherHome[row.uid] then
+            local nx, ny = A.xyz(row.npc)
+            row.carDist = (nx ~= nil and A.dist(nx, ny, cx, cy)) or 999
+            row.homeRank = home[row.uid] or 999
+            free[#free + 1] = row
+        end
     end
+    table.sort(free, function(a, b)
+        local aSeated = a.inCar == car and 0 or 1
+        local bSeated = b.inCar == car and 0 or 1
+        if aSeated ~= bSeated then return aSeated < bSeated end
+        local aRank = a.homeRank or 999
+        local bRank = b.homeRank or 999
+        if aRank ~= bRank then return aRank < bRank end
+        local aDist = a.carDist or 999
+        local bDist = b.carDist or 999
+        if math.abs(aDist - bDist) > 0.01 then return aDist < bDist end
+        return tostring(a.uid) < tostring(b.uid)
+    end)
     if #free == 0 then return false, "no_survivors" end
     local seats, crew, assigned = {}, {}, {}
     local seatsOK = pcall(function()
@@ -658,8 +781,14 @@ function S.recrew(caravan, vehicleId, route, limit, reserved)
     end)
     if not seatsOK then return false, "seat_query_failed" end
     -- limit is a quota of ON-FOOT survivors, not total crew. Keep seated
-    -- identities in their real seats; never replace a player or unrelated NPC.
-    local cap = math.max(0, math.min(#seats, math.floor(tonumber(limit) or #seats)))
+    -- identities in their real seats; never replace a player or unrelated NPC,
+    -- and never consume the last on-foot driver needed by another working car.
+    local onFootPool = 0
+    for _, row in ipairs(free) do
+        if row.inCar == nil and not assigned[row.uid] then onFootPool = onFootPool + 1 end
+    end
+    local maxForThisCar = math.max(0, onFootPool - unassignedOtherCars)
+    local cap = math.max(0, math.min(#seats, maxForThisCar, math.floor(tonumber(limit) or #seats)))
     local added = 0
     for _, row in ipairs(free) do
         if added < cap and row.inCar == nil and not assigned[row.uid] then
@@ -670,6 +799,18 @@ function S.recrew(caravan, vehicleId, route, limit, reserved)
     end
     table.sort(crew, function(a, b) return a.seat < b.seat end)
     if crew[1] == nil or crew[1].seat ~= 0 then return false, "no_driver_seat" end
+    if added > 0 then
+        local moving = false
+        pcall(function()
+            local spd = tonumber(car:getCurrentSpeedKmHour()) or 0
+            if math.abs(spd) > 0.15 then
+                moving = true
+                if type(car.setBraking) == "function" then car:setBraking(true) end
+                if type(car.setBrakingForce) == "function" then car:setBrakingForce(1.0) end
+            end
+        end)
+        if moving then return false, "car_moving" end
+    end
     local owner = p.VehicleArrivals.owner()
     if owner == nil then return false, "no_owner" end
     local player = A.players()[1]
@@ -781,6 +922,7 @@ function S.recrew(caravan, vehicleId, route, limit, reserved)
         owner.departures[vehicleId] = { revision = binding.revision, options = { route = points, speedKmh = caravan.speedKmh } }
     end
     if p.DrivingMultiplayer ~= nil then p.DrivingMultiplayer.broadcastAt = 0 end
+    S.rememberCarCrew(caravan, vehicleId, crew)
     A.metrics.recrews = A.metrics.recrews + 1
     if reserved then for _, member in ipairs(crew) do reserved[member.uid] = true end end
     return true, #crew
@@ -795,6 +937,7 @@ function S.abandon(caravan, vehicleId)
     local owner, s = S.sessionOf(vehicleId)
     if not S.releaseCar(vehicleId, caravan.id) then return false end
     A.tagVehicle(car, nil, nil)
+    if type(caravan.carCrews) == "table" then caravan.carCrews[tostring(vehicleId)] = nil end
     for index = #(caravan.vehicleIds or {}), 1, -1 do
         if caravan.vehicleIds[index] == vehicleId then table.remove(caravan.vehicleIds, index) end
     end

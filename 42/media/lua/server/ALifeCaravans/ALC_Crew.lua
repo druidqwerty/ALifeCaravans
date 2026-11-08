@@ -108,13 +108,20 @@ function R.tick(c, now)
     for key, request in pairs(c.recrew or {}) do
         if now >= (request.dueMs or 0) then pending[#pending+1] = {key=key, request=request} end
     end
-    table.sort(pending,function(a,b) return tostring(a.request.vehicleId)<tostring(b.request.vehicleId) end)
+    local convoyOrder = {}
+    for idx, vid in ipairs(c.vehicleIds or {}) do convoyOrder[tostring(vid)] = idx end
+    table.sort(pending, function(a, b)
+        local oa = convoyOrder[tostring(a.request.vehicleId)] or 999
+        local ob = convoyOrder[tostring(b.request.vehicleId)] or 999
+        if oa ~= ob then return oa < ob end
+        return tostring(a.request.vehicleId) < tostring(b.request.vehicleId)
+    end)
     if #pending == 0 then return end
     local free = 0
     for _, row in ipairs(A.Spawn.survivors(c,c.x or 0,c.y or 0,100)) do
         if row.inCar == nil and not reserved[row.uid] then free=free+1 end
     end
-    local quota = math.max(1, math.ceil(free/#pending))
+    local quota = math.max(1, math.ceil(free/math.max(#pending, #(c.vehicleIds or {}))))
     for _, item in ipairs(pending) do
         local q, id = item.request, item.request.vehicleId
         local car = getVehicleById(id)
@@ -125,30 +132,54 @@ function R.tick(c, now)
         local busy = s and not s.exitAt and not s.exitRequested and not s.detaching
         -- Do not destroy an in-flight handoff or a boarding session to retry it.
         if busy or sleeping then
-            c.recrew[item.key] = nil
-        elseif car and A.vehicleHasPlayer(car) and not A.Spawn.canRestoreRiders(c, id) then
-            q.dueMs = now+R.retryMs
-        else
-            local ok, detail = A.Spawn.recrew(c,id,nil,quota,reserved)
-            if ok then
-                c.recrew[item.key] = nil
-                A.Director.publishDirty = true
-                A.log(c.id,"car",id,"crew returning:",q.reason,detail)
-            else
-                q.firstAtMs = q.firstAtMs or now
-                q.tries = (q.tries or 0)+1
-                q.dueMs = now+math.min(30000,R.retryMs*q.tries)
-                q.lastReason = tostring(detail)
-                -- A temporary missing body, blocked door or absent owner never
-                -- proves destruction. Keep the car and retry with bounded backoff.
-                local registry = ProjectALife and ProjectALife.ActorRegistry
-                local allDead = #(c.actorUids or {}) > 0 and registry ~= nil
-                for _, uid in ipairs(c.actorUids or {}) do
-                    local readOK, actor = pcall(function() return registry and registry.read(uid) end)
-                    if not readOK or not actor or actor.lifecycle ~= "dead" then allDead=false break end
+            if q.reason == "consolidate_abandoned" and s and not sleeping then
+                -- Stop the remaining car first so survivors from the abandoned car can board safely.
+                if A.Convoy and type(A.Convoy.stop) == "function" and s.phase == "driving" and not s.braking then
+                    pcall(A.Convoy.stop, s, "regrouping abandoned crew")
                 end
-                if allDead and now-q.firstAtMs >= 30000 then
-                    A.Director.abandonCar(c,id,"crew_dead")
+                if s.phase == "seated" then
+                    if A.Spawn.releaseCar(id, c.id) then busy = false end
+                else
+                    q.dueMs = now + 1200
+                end
+            else
+                c.recrew[item.key] = nil
+            end
+        end
+        if c.recrew[item.key] ~= nil and not busy and not sleeping then
+            if car and A.vehicleHasPlayer(car) and not A.Spawn.canRestoreRiders(c, id) then
+                q.dueMs = now+R.retryMs
+            else
+                local homeSet = A.Spawn.homeCrewSet and A.Spawn.homeCrewSet(c, id) or {}
+                local homeCount = 0
+                for _ in pairs(homeSet) do homeCount = homeCount + 1 end
+                local carQuota = math.max(quota, homeCount)
+                if q.reason == "consolidate_abandoned" then carQuota = math.max(carQuota, free) end
+                local ok, detail = A.Spawn.recrew(c,id,nil,carQuota,reserved)
+                if ok then
+                    c.recrew[item.key] = nil
+                    A.Director.publishDirty = true
+                    A.log(c.id,"car",id,"crew returning:",q.reason,detail)
+                elseif detail == "car_moving" then
+                    q.firstAtMs = q.firstAtMs or now
+                    q.dueMs = now + 1000
+                    q.lastReason = "car_moving"
+                else
+                    q.firstAtMs = q.firstAtMs or now
+                    q.tries = (q.tries or 0)+1
+                    q.dueMs = now+math.min(30000,R.retryMs*q.tries)
+                    q.lastReason = tostring(detail)
+                    -- A temporary missing body, blocked door or absent owner never
+                    -- proves destruction. Keep the car and retry with bounded backoff.
+                    local registry = ProjectALife and ProjectALife.ActorRegistry
+                    local allDead = #(c.actorUids or {}) > 0 and registry ~= nil
+                    for _, uid in ipairs(c.actorUids or {}) do
+                        local readOK, actor = pcall(function() return registry and registry.read(uid) end)
+                        if not readOK or not actor or actor.lifecycle ~= "dead" then allDead=false break end
+                    end
+                    if allDead and now-q.firstAtMs >= 30000 then
+                        A.Director.abandonCar(c,id,"crew_dead")
+                    end
                 end
             end
         end

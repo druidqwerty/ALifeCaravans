@@ -18,7 +18,7 @@ require "ALifeCaravans/03_ALC_Roads"
 require "ALifeCaravans/06_ALC_Physics"
 
 local A = ALifeCaravans
-local C = { known = {}, nextTickMs = 0, intervalMs = 300, goalReach = 22, lowQueue = 3, restartDelayMs = 2000,
+local C = { known = {}, nextTickMs = 0, intervalMs = 300, goalReach = 22, lowQueue = 5, restartDelayMs = 2000,
     tileCache = {}, bodyCache = nil, npcScanCache = nil, scoutedThisTick = false,
     formation = { fullGap = 16, stopGap = 7, regroupGap = 45, regroupDone = 25, regroupFactor = 0.5, crawl = 0.35 },
     stuck = { skipMs = 25000, rescoutMs = 60000, reportMs = 110000, moveTiles = 2.5 } }
@@ -292,6 +292,15 @@ function C.formationSpeed(group, position)
     local base = speedFor(row.entry) / 3.6
     local f = C.formation
     local factor = 1
+    for idx, other in ipairs(group) do
+        if idx ~= position and other.s ~= nil then
+            local os = other.s
+            if os.phase == "approach" or os.phase == "boardwait"
+                    or os.exitAt ~= nil or os.exitRequested == true or os.joining ~= nil then
+                return 0, base, 0
+            end
+        end
+    end
     if position > 1 then
         local ahead = group[position - 1]
         if ahead ~= nil and ahead.x ~= nil and row.x ~= nil then
@@ -687,10 +696,47 @@ function C.installHooks()
                     if now - s.last > 200 then
                         s.last = now - 50
                     end
+                    if type(s.vehicle.getUpVectorDot) == "function" then
+                        local okDot, upDot = pcall(s.vehicle.getUpVectorDot, s.vehicle)
+                        if okDot and type(upDot) == "number" and upDot >= 0.85 then
+                            s.alcTiltSinceMs = nil
+                        end
+                    end
                 end
                 return original(s)
             end
         end, "DrivingDemoClient.drive")
+    end
+    if type(p.DrivingDemoClient) == "table" and type(p.DrivingDemoClient.finish) == "function" then
+        A.wrap(p.DrivingDemoClient, "finish", function(original)
+            return function(reason, failed, localOnly)
+                local s = p.DrivingDemoClient.active
+                if s ~= nil and reason == "Car tilted; demo aborted." and C.isCaravanVehicle(s.vehicle) then
+                    local okDot, upDot = pcall(function() return s.vehicle:getUpVectorDot() end)
+                    if okDot and type(upDot) == "number" and upDot >= 0.50 then
+                        local now = A.now()
+                        s.alcTiltSinceMs = s.alcTiltSinceMs or now
+                        if now - s.alcTiltSinceMs < 1500 then
+                            return
+                        end
+                    end
+                end
+                return original(reason, failed, localOnly)
+            end
+        end, "DrivingDemoClient.finish")
+    end
+    if type(p.VehicleRules) == "table" and type(p.VehicleRules.strike) == "function" then
+        A.wrap(p.VehicleRules, "strike", function(original)
+            return function(shell, vehicle, speedKmh, now)
+                if vehicle ~= nil and shell ~= nil and C.isCaravanVehicle(vehicle) then
+                    local okData, data = pcall(function() return type(shell.getModData) == "function" and shell:getModData() or nil end)
+                    if okData and type(data) == "table" and (data.ProjectALifeOwned or data.ProjectALifeActor or data.ProjectALifeUID) then
+                        return false
+                    end
+                end
+                return original(shell, vehicle, speedKmh, now)
+            end
+        end, "VehicleRules.strike")
     end
     if type(p.DrivingRecovery) == "table" and type(p.DrivingRecovery.driveStall) == "function" then
         A.wrap(p.DrivingRecovery, "driveStall", function(original)
@@ -842,9 +888,10 @@ function C.tickOne(group, position, now)
         local tail = s.route and s.route[#s.route] or nil
         local vx, vy = A.xyz(vehicle)
         local tailDist = (tail and vx ~= nil) and A.dist(vx, vy, tail.x, tail.y) or 0
+        local urgentQueue = #s.route <= 1
         if not s.braking and not s.appendPending and s.route ~= nil
-                and (#s.route == 0 or (#s.route <= C.lowQueue and tailDist <= 38))
-                and not C.scoutedThisTick and now >= (entry.nextScoutAt or 0) then
+                and (#s.route == 0 or (#s.route <= C.lowQueue and tailDist <= 50))
+                and (not C.scoutedThisTick or urgentQueue) and now >= (entry.nextScoutAt or 0) then
             C.scoutedThisTick = true
             entry.nextScoutAt = now + 600
             local points, info = C.legFor(entry, s)
