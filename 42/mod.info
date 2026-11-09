@@ -1,10 +1,10 @@
 name=A-Life: Caravans
 id=ALifeCaravans
 author=druid
-modversion=0.7.2
+modversion=0.8.0
 versionMin=42.21.0
 poster=poster.png
 icon=icon.png
 require=ProjectALifeNPCs
-loadModAfter=ProjectALifeNPCs,ProjectALifeJimmy,AliveJeemDynamicWorld,ALifeKnoxFractured
-description=Add-on for Project A-Life [ALIFE NPCS]: faction caravans and convoys of up to four cars drive the roads between towns at 35 km/h, so you can catch up in your own car; far away they travel fast in a ledger and show on your map. Flag them down (menu, horn, headlight flashes), ask for news, barter goods, hitch a ride, escort them for a reward, pay a raider's toll or threaten them; ambushes on the road, a new driver when one dies, convoy radio chatter (EN/RU). / Аддон к Project A-Life: караваны и колонны фракций до четырёх машин ездят между городами на 35 км/ч и видны на карте; останавливайте их, меняйтесь товаром, ездите попутчиком, сопровождайте за награду, платите налётчикам за проезд; засады, замена погибшего водителя, переговоры по радио (EN/RU).
+loadModAfter=ProjectALifeNPCs,ProjectALifeJimmy,AliveJeemDynamicWorld,ALifeKnoxFractured,ALifeAirwaves
+description=Updated for Project A-Life 1.5.1! Organized multi-car faction convoys (2-4 vehicles), regional 5-category town supply & demand economy (+35% shortage bonus), 5 special event caravans, and 101.6 MHz Caravan Radio Dispatch (call the nearest caravan by radio, order roadside supply drops, and request town market & convoy intel with auto map markers). Flag convoys down, barter, hitch a ride, repair rigs, or cover an SOS escape (EN/RU). / Обновлено под Project A-Life 1.5.1! Организованные колонны фракций из 2-4 машин, региональная экономика городов (+35% за дефицит), 5 спец-караванов и радиосвязь на 101.6 МГц (вызов каравана по рации, заказ сброса припасов к дороге и сводки рынка/конвоев с авто-метками на карте). Торговля, поездки пассажиром, полевые услуги и спасение по SOS (EN/RU).

@@ -421,4 +421,56 @@ return function(check, newVehicle)
     check("non-combat dismount keeps Car 1 crew objective at Car 1 instead of walking to Car 2",
         obj1 ~= nil and math.abs(obj1.x - 150) < 0.1 and obj2 ~= nil and math.abs(obj2.x - 142) < 0.1,
         string.format("obj1=%s obj2=%s", tostring(obj1 and obj1.x), tostring(obj2 and obj2.x)))
+
+    -- 8. v0.8.0: Project A-Life 1.5.1 CarLife / RadioReserved compatibility & Radio Caravan Dispatch (101.6 MHz)
+    ProjectALife.RadioReserved = {
+        entries = {
+            { key = "knox", frequency = 99600, alternates = {} },
+            { key = "conflict_test", frequency = 101600, alternates = {} },
+        },
+    }
+    check("Radio.frequency steps past ProjectALife.RadioReserved frequency collision", A.Radio.frequency() == 101800)
+    ProjectALife.RadioReserved.entries[2] = nil
+    check("Radio.frequency returns 101600 Hz (101.6 MHz) when unreserved", A.Radio.frequency() == 101600 and A.Radio.freqMhz() == "101.6 MHz")
+
+    A.settings.minVehicles = 2
+    local tradeConvoy = V.convoy("trade", 4, 4, 2)
+    check("MinVehicles=2 ensures civilian/trade convoy spawns at least 2 cars for 4 crew", #tradeConvoy >= 2)
+
+    local clKept = {}
+    ProjectALife.CarLifeServer = { keepCar = function(c) clKept[#clKept + 1] = c:getId() end }
+    ProjectALife.CarLife = { eligible = function() return true end }
+    A.wrapped["CarLifeServer.keepCar"] = nil
+    A.wrapped["CarLife.eligible"] = nil
+    A.Spawn.installed = false
+    A.Spawn.install()
+    ProjectALife.CarLifeServer.keepCar(convCar1)
+    local plainCar = newVehicle("Base.CarNormal", 180, 100)
+    ProjectALife.CarLifeServer.keepCar(plainCar)
+    check("CarLifeServer.keepCar hook ignores tagged caravan car and keeps ordinary car", #clKept == 1 and clKept[1] == plainCar:getId())
+    local okElig, whyElig = ProjectALife.CarLife.eligible({ carKey = convCar1:getId() })
+    check("CarLife.eligible hook refuses caravan vehicle", okElig == false and whyElig == "alc_caravan_vehicle")
+
+    -- Radio Caravan Dispatch, Supply Drop & Market Intel (withRequirePoweredRadio=false for headless mock)
+    A.settings.requirePoweredRadio = false
+    A.settings.radioDispatchEnabled = true
+    multiCaravan.halted = nil
+    PLAYER.x, PLAYER.y = 148, 100
+    local okHail, hailedC = A.RadioServer.hailNearestCaravan(PLAYER)
+    check("radio_hail_caravan halts nearby friendly caravan and logs radio broadcast",
+        okHail == true and hailedC == multiCaravan and multiCaravan.halted == true and #A.RadioServer.recentBroadcasts() >= 1)
+
+    for _ = 1, 15 do pinv:AddItem("Base.Money") end
+    local okDrop, drop = A.RadioServer.requestSupplyDrop(PLAYER, "pkg_medical")
+    check("radio_supply_drop creates ready supply drop and spends credit", okDrop == true and drop ~= nil and drop.state == "ready")
+    PLAYER.x, PLAYER.y = drop.x, drop.y
+    local okClaim, claimedRows = A.RadioServer.claimSupplyDrop(PLAYER, drop.id)
+    check("radio_claim_drop delivers crate items to player and marks claimed", okClaim == true and drop.state == "claimed" and #claimedRows >= 3)
+    local okDupClaim = A.RadioServer.claimSupplyDrop(PLAYER, drop.id)
+    check("duplicate supply drop claim blocked by receipt", okDupClaim == false)
+
+    local okMkt, mktList = A.RadioServer.requestMarketIntel(PLAYER)
+    check("radio_market_intel compiles regional town shortage summary", okMkt == true and type(mktList) == "table" and #mktList >= 2)
+    A.settings.requirePoweredRadio = true
 end
+

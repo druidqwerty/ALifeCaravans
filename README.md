@@ -8,7 +8,19 @@ Faction caravans for [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sh
 
 Free and open source. The code is developed with AI; direction, testing and time are mine. [Support the mods on Boosty](https://boosty.to/lrgpp).
 
-> **0.7.2 — Multi-car convoy crew ownership & boarding safety fix, plus Sandbox settings for Armored KI5 vehicle spawn chance (`ArmoredVehicleChance`) and post-defeat salvage vehicle condition (`TrophyVehicleCondition`).** See [verification and limits](TEST_0.7.2.md).
+> **0.8.0 — Updated for Project A-Life 1.5 / 1.5.1! Full compatibility with A-Life 1.5.1 (`CarLife`, `Cars2`, `VehicleEvasion`, `RadioReserved`), organized 2–4 car convoys by default (`MinVehicles = 2`), and 101.6 MHz Caravan Radio Dispatch & Roadside Supply Drops (`09_ALC_Radio.lua`, `ALC_RadioServer.lua`, `ALC_RadioWindow.lua`).** See [verification and limits](TEST_0.8.0.md).
+
+## New in 0.8.0
+
+- **Project A-Life 1.5 / 1.5.1 compatibility & organized multi-car convoys (`ALC_Spawn.lua`, `02_ALC_Vehicles.lua`, `00_ALC_Core.lua`).**
+  - Integrated with Project A-Life 1.5.1's `CarLife`, `CarLifeServer`, `Cars2`, `VehicleEvasion`, and `RadioReserved` modules: A-Life foot squads never claim or break into parked caravan vehicles during roadside stops, and the Caravan radio channel automatically steps past any frequency reserved by Project A-Life.
+  - Since lone survivor cars are now driven by Project A-Life 1.5's `CarLife`, Caravans now defaults to **organized 2–4 vehicle convoys** (`MinVehicles = 2`, `CrewMin = 4`, configurable in Sandbox). No Java agent or `ZombieBuddy` installation is required.
+- **101.6 MHz Caravan & Trade Net (`09_ALC_Radio.lua`, `ALC_RadioServer.lua`, `ALC_RadioWindow.lua`, `ALC_Map.lua`).** Merged the best features of *A-Life: Airwaves & Contracts* directly into Caravans:
+  - Dedicated **101.6 MHz Caravan & Trade Net** registered in vanilla `ZomboidRadio` / `DynamicRadio` (audible on Walkie-Talkies, HAM Radios, and Vehicle Radios) plus an in-game broadcast log and overhead `HaloText` notifications.
+  - Custom 3-tab **Caravan Radio & Supply Dispatch window (`ALCRadioWindow`)** opened via hotkey **F9** (configurable in `Options → Mods`), right-clicking any radio, or clicking **Radio Dispatch (101.6)** inside the Convoy Contact Window.
+  - **Hail Nearest Caravan by Radio:** call the closest friendly trading convoy on `101.6 MHz` to hold position (or route toward you) and broadcast its coordinates.
+  - **Roadside Supply Drops:** spend cash or barter goods to order 5 types of supply crates (**Medical**, **Ammo**, **Fuel & Repair**, **Tools**, **Rations**) delivered to a nearby road point.
+  - **Town Market & Road Intel + Auto Map Notes:** request a regional shortage bulletin showing which towns pay **+35% higher barter credit** for scarce goods, with automatic `WorldMapSymbols` notes when carrying a pen or pencil (`Base.Pen`, `Base.Pencil`).
 
 ## New in 0.7.2
 
@@ -82,7 +94,7 @@ Save/reload recovery also preserves a seated player instead of deadlocking the c
 
 ## Requirements and installation
 
-- **Project Zomboid Build 42.21** and **Project A-Life 1.4.6** are the verified target for 0.7.2. Keep A-Life Driving enabled. Later dependency/game versions require their own verification.
+- **Project Zomboid Build 42.21** and **Project A-Life 1.5.1** are the verified target for 0.8.0. Keep A-Life Driving enabled. Later dependency/game versions require their own verification.
 - [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sharedfiles/filedetails/?id=3803984183).
 - [A-Life: Factions Expanded](https://steamcommunity.com/sharedfiles/filedetails/?id=3813871509) is optional, but recommended for the full experience.
 - [Project A-Life – Jeem Extension](https://steamcommunity.com/sharedfiles/filedetails/?id=3806944055) is optional, but recommended for the full experience; its public palette integrates with the new windows.
@@ -103,9 +115,9 @@ Right-click within about 18 tiles of a caravan to interact. Trade and ride reque
 
 ## Verification
 
-[0.7.2 current-source report](TEST_0.7.2.md). Earlier verification remains in [0.7.1](TEST_0.7.1.md), [0.6.3](TEST_0.6.3.md), [0.6.2](TEST_0.6.2.md), [0.6.1](TEST_0.6.1.md), two-client MP evidence in [0.6.0](TEST_0.6.0.md), and passenger save/reload and driver replacement evidence in [0.5.0](TEST_0.5.0.md).
+[0.8.0 current-source report](TEST_0.8.0.md). Earlier verification remains in [0.7.2](TEST_0.7.2.md), [0.7.1](TEST_0.7.1.md), [0.6.3](TEST_0.6.3.md), [0.6.2](TEST_0.6.2.md), [0.6.1](TEST_0.6.1.md), two-client MP evidence in [0.6.0](TEST_0.6.0.md), and passenger save/reload and driver replacement evidence in [0.5.0](TEST_0.5.0.md).
 
-Developer checks: `python tools/run_test.py` (486 assertions) and `python tools/pz_loadcheck.py`.
+Developer checks: `python tools/run_test.py` (496 assertions) and `python tools/pz_loadcheck.py`.
 
 ## Current limits
 

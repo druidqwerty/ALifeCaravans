@@ -18,6 +18,8 @@ require "ALifeCaravans/ALC_Economy"
 require "ALifeCaravans/ALC_Cargo"
 require "ALifeCaravans/ALC_Spawn"
 require "ALifeCaravans/ALC_Director"
+require "ALifeCaravans/09_ALC_Radio"
+require "ALifeCaravans/ALC_RadioServer"
 
 local A = ALifeCaravans
 local I = { reach = 18, tollPrice = 60, installed = false, reservationMs = 20000, txSerial = 0 }
@@ -318,9 +320,31 @@ end
 
 function I.command(player, command, args)
     if not A.authority() or player == nil or type(command) ~= "string" or player:isDead() then return end
+    args = type(args) == "table" and args or {}
     if command == "stateRequest" then A.Director.sendState(player) return end
     if command == "vehicleShot" and A.Ballistics and type(A.Ballistics.onShot) == "function" then
         A.Ballistics.onShot(player, args)
+        return
+    end
+    if command == "radio_tune" and A.Radio then
+        local ok, freq, devName = A.Radio.tunePlayerRadio(player, args.freq)
+        if ok then
+            I.reply(player, "serviceNotice", { key = "radio_tuned", vars = { freq = A.Radio.freqMhz(freq), device = devName } })
+        else
+            I.reply(player, "serviceNotice", { key = "err_no_radio" })
+        end
+        return
+    elseif command == "radio_hail_caravan" and A.RadioServer then
+        A.RadioServer.hailNearestCaravan(player)
+        return
+    elseif command == "radio_supply_drop" and A.RadioServer then
+        A.RadioServer.requestSupplyDrop(player, args.pkgId)
+        return
+    elseif command == "radio_claim_drop" and A.RadioServer then
+        A.RadioServer.claimSupplyDrop(player, args.id)
+        return
+    elseif command == "radio_market_intel" and A.RadioServer then
+        A.RadioServer.requestMarketIntel(player)
         return
     end
     local caravan, vehicleId = I.caravanOf(args)

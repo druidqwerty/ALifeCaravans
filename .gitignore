@@ -1,5 +1,8 @@
 tools/loadcheck/
 tools/livetest/env/
 tools/livetest/results/
+tools/livetest/runs_080/
+tools/livetest/live_sp_080.py
+tools/livetest/current_080.json
 __pycache__/
 *.pyc

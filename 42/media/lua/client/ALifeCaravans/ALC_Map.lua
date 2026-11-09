@@ -7,9 +7,10 @@
 
 require "ALifeCaravans/00_ALC_Core"
 require "ALifeCaravans/01_ALC_Lines"
+require "ALifeCaravans/09_ALC_Radio"
 
 local A = ALifeCaravans
-local M = { markers = {}, order = {}, installed = false, options = { worldMap = true, minimap = true, labels = true }, intervalMs = 4000 }
+local M = { markers = {}, order = {}, installed = false, options = { worldMap = true, minimap = true, labels = true }, intervalMs = 4000, markedIds = {} }
 A.Map = M
 
 M.colors = {
@@ -139,7 +140,63 @@ function M.drawOn(element, api, labels, size)
             end
         end
     end
+    for _, d in ipairs(A.Client and A.Client.dispatches or {}) do
+        if d.state == "ready" and finite(d.x) and finite(d.y) then
+            local sx, sy = api:worldToUIX(d.x, d.y), api:worldToUIY(d.x, d.y)
+            if sx >= -20 and sy >= -20 and sx <= width + 20 and sy <= height + 20 then
+                sx, sy = math.floor(sx + 0.5), math.floor(sy + 0.5)
+                element:drawRect(sx - half, sy - half, half * 2, half * 2, 0.96, 0.43, 0.82, 0.72)
+                element:drawRectBorder(sx - half - 1, sy - half - 1, half * 2 + 2, half * 2 + 2, 1, 0.08, 0.12, 0.12)
+                if labels then
+                    local txt = "DROP: " .. tostring(d.callsign or "Supply")
+                    element:drawText(txt, sx + half + 7, sy - 7, 0.43, 0.85, 0.75, 1, UIFont.Small)
+                end
+                drawn = drawn + 1
+            end
+        end
+    end
     return drawn
+end
+
+function M.addSymbolNote(x, y, label, player)
+    x, y = finite(x), finite(y)
+    if x == nil or y == nil then return false, "bad_coords" end
+    if player ~= nil and A.Radio and not A.Radio.canWriteOnMap(player) then
+        return false, "no_pen"
+    end
+    label = tostring(label or "Caravan")
+    pcall(function()
+        local mapInst = ISWorldMap_instance
+        local mapAPI = mapInst and mapInst.mapAPI or nil
+        if mapAPI ~= nil then
+            local symAPI = (type(mapAPI.getSymbolsAPIv2) == "function" and mapAPI:getSymbolsAPIv2())
+                or (type(mapAPI.getSymbolsAPI) == "function" and mapAPI:getSymbolsAPI())
+                or nil
+            if symAPI ~= nil and type(symAPI.addUntranslatedText) == "function" then
+                local layerId = type(symAPI.getDefaultTextLayerID) == "function" and symAPI:getDefaultTextLayerID() or "map-note"
+                local textSym = symAPI:addUntranslatedText(label, layerId, x, y)
+                if textSym ~= nil then
+                    if type(textSym.setRGBA) == "function" then textSym:setRGBA(0.18, 0.48, 0.42, 1.0) end
+                    if type(textSym.setAnchor) == "function" then textSym:setAnchor(0.5, 0.5) end
+                end
+            end
+        end
+        if player ~= nil and type(player.playSoundLocal) == "function" then
+            player:playSoundLocal("MapAddNote")
+        end
+    end)
+    A.metrics.mapMarks = (A.metrics.mapMarks or 0) + 1
+    return true, label
+end
+
+function M.autoMarkEntry(entry, player)
+    if not A.settings.autoMapMarkers or type(entry) ~= "table" then return false end
+    if entry.id and M.markedIds[entry.id] then return false end
+    if not finite(entry.x) or not finite(entry.y) then return false end
+    if player == nil or (A.Radio and not A.Radio.canWriteOnMap(player)) then return false end
+    if entry.id then M.markedIds[entry.id] = true end
+    local lbl = string.format("[%s] %s", tostring(entry.speaker or "Caravan"), tostring(entry.town or "Road"))
+    return M.addSymbolNote(entry.x, entry.y, lbl, player)
 end
 
 function M.install()

@@ -69,6 +69,9 @@ def main():
             if not str(value).strip():
                 print("FAIL empty translation", name, key)
                 failed += 1
+            if "%" in str(value):
+                print("FAIL percent sign in translation", name, key, value)
+                failed += 1
         translations.update(en)
     lua = lupa.LuaRuntime(unpack_returned_tuples=True)
     with open(sandbox_path, encoding="utf-8") as handle:

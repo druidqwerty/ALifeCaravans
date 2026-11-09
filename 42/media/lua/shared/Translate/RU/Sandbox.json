@@ -72,5 +72,17 @@
     "Sandbox_ALifeCaravans_EconomyEnabled": "Региональная экономика спроса и предложения городов",
     "Sandbox_ALifeCaravans_EconomyEnabled_tooltip": "Города отслеживают дефицит и избыток медицины, еды, патронов, топлива и инструментов. Караваны везут дефицитные товары и дороже скупают их у игроков.",
     "Sandbox_ALifeCaravans_FieldServices": "Помощь с ремонтом на дороге и полевые услуги",
-    "Sandbox_ALifeCaravans_FieldServices_tooltip": "Позволяет чинить и заправлять вставшие караваны за награду, запрашивать перевязку у медиков, помогать беженцам припасами и обслуживать свою машину."
+    "Sandbox_ALifeCaravans_FieldServices_tooltip": "Позволяет чинить и заправлять вставшие караваны за награду, запрашивать перевязку у медиков, помогать беженцам припасами и обслуживать свою машину.",
+    "Sandbox_ALifeCaravans_MinVehicles": "Минимум машин в колонне каравана",
+    "Sandbox_ALifeCaravans_MinVehicles_tooltip": "Минимальное число машин в организованной колонне каравана (по умолчанию 2, так как одиночные машины выживших водит CarLife из Project A-Life 1.5).",
+    "Sandbox_ALifeCaravans_RadioFreqKhz": "Частота радиоканала караванов (Гц)",
+    "Sandbox_ALifeCaravans_RadioFreqKhz_tooltip": "Частота в Гц для торгового радиоканала караванов (101600 соответствует 101.6 МГц). Автоматически обходит частоты, занятые Project A-Life.",
+    "Sandbox_ALifeCaravans_RadioDispatchEnabled": "Вызов каравана и заказ снабжения по рации",
+    "Sandbox_ALifeCaravans_RadioDispatchEnabled_tooltip": "Позволяет игрокам с рацией вызывать ближайший торговый караван, заказывать сброс припасов к дороге и запрашивать сводки рынка на 101.6 МГц.",
+    "Sandbox_ALifeCaravans_SupplyDropCooldownMinutes": "Перезарядка заказа снабжения (реальные минуты)",
+    "Sandbox_ALifeCaravans_SupplyDropCooldownMinutes_tooltip": "Время ожидания в реальных минутах между заказами доставки ящиков снабжения по рации.",
+    "Sandbox_ALifeCaravans_AutoMapMarkers": "Авто-метки радиокоординат на карте",
+    "Sandbox_ALifeCaravans_AutoMapMarkers_tooltip": "Автоматически наносить координаты караванов из эфира и точки сброса грузов на карту мира при наличии ручки или карандаша.",
+    "Sandbox_ALifeCaravans_RequirePoweredRadio": "Требовать включённую рацию для вызова",
+    "Sandbox_ALifeCaravans_RequirePoweredRadio_tooltip": "Требовать включённую заряженную рацию (в инвентаре, руках, машине или рядом) для вызова каравана и заказа поставок."
 }

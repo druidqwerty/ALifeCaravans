@@ -11,15 +11,21 @@ require "ALifeCaravans/04_ALC_Convoy"
 require "ALifeCaravans/05_ALC_Trade"
 require "ALifeCaravans/07_ALC_Market"
 require "ALifeCaravans/08_ALC_Ballistics"
+require "ALifeCaravans/09_ALC_Radio"
 require "ALifeCaravans/ALC_Map"
 require "ISUI/ISCollapsableWindow"
 require "ISUI/ISScrollingListBox"
 require "ISUI/ISButton"
 require "ALifeCaravans/ALC_ContactWindow"
+require "ALifeCaravans/ALC_RadioWindow"
 require "ALifeCaravans/ALC_Details"
 
 local A = ALifeCaravans
-local Cl = { options = { menu = true, notices = true }, requestedAtMs = 0, stock = {}, done = {}, flashes = {}, window = nil }
+local Cl = {
+    options = { menu = true, notices = true, radioKey = (type(Keyboard) == "table" and Keyboard.KEY_F9) or 67 },
+    requestedAtMs = 0, stock = {}, done = {}, flashes = {}, window = nil, radioWindow = nil,
+    radioLog = {}, dispatches = {}, markets = {},
+}
 A.Client = Cl
 local L = A.Lines
 local T = A.Trade
@@ -122,11 +128,21 @@ function Cl.setMarkers(markers)
     A.Map.setMarkers(markers)
 end
 
+function Cl.setRadioState(radioLog, dispatches, markets)
+    if type(radioLog) == "table" then Cl.radioLog = radioLog end
+    if type(dispatches) == "table" then Cl.dispatches = dispatches end
+    if type(markets) == "table" then Cl.markets = markets end
+    if Cl.radioWindow ~= nil then Cl.radioWindow:refresh() end
+end
+
 function Cl.receive(module, command, args)
     if module ~= A.MODULE then return end
     if command == "state" then
         A.Convoy.setKnown(type(args) == "table" and args.known or {})
         A.Map.setMarkers(type(args) == "table" and args.markers or {})
+        if type(args) == "table" then
+            Cl.setRadioState(args.radioLog, args.dispatches, args.markets)
+        end
     elseif command == "stock" then
         if type(args) == "table" and args.vehicleId ~= nil and A.Convoy.entry(args.vehicleId) then
             Cl.stock[args.vehicleId] = args
@@ -158,6 +174,20 @@ function Cl.receive(module, command, args)
         if type(args) == "table" and type(args.key) == "string" then
             Cl.notice(L.ui("service_" .. args.key, args.key, type(args.vars) == "table" and args.vars or {}), args.playerNum)
         end
+    elseif command == "radioEvent" then
+        if type(args) == "table" then
+            local p = player0(args.playerNum)
+            if args.entry then
+                local canRx = not A.Radio or A.Radio.canUseRadio(p)
+                if canRx then
+                    Cl.notice("[" .. (A.Radio and A.Radio.freqMhz(args.entry.freq) or "101.6 MHz") .. "] " .. tostring(args.entry.text or ""), args.playerNum)
+                    A.Map.autoMarkEntry(args.entry, p)
+                end
+            elseif args.kind == "drop_claimed" then
+                Cl.notice(L.ui("rnotice_drop_claimed", "Claimed supply drop from {callsign}!", args), args.playerNum)
+            end
+            if Cl.radioWindow ~= nil then Cl.radioWindow:refresh() end
+        end
     elseif command == "notice" then
         Cl.notice(type(args) == "table" and args.text or nil)
     end
@@ -167,11 +197,55 @@ local function option(context, label, callback, ...)
     return context:addOption(label, nil, callback, ...)
 end
 
+function Cl.fillInventoryMenu(playerNum, context, items)
+    if not Cl.options.menu or type(context) ~= "table" or type(context.addOption) ~= "function" then return end
+    local foundRadio = false
+    for _, v in ipairs(items or {}) do
+        local item = type(v) == "table" and v.items and v.items[1] or v
+        if item ~= nil and ((type(instanceof) == "function" and instanceof(item, "Radio")) or type(item.getDeviceData) == "function") then
+            foundRadio = true
+            break
+        end
+    end
+    if not foundRadio then return end
+    option(context, L.ui("menu_open_radio", "[A-LIFE] Caravan Radio & Dispatch (101.6 MHz)"), function()
+        if A.Style and type(A.Style.openRadioWindow) == "function" then
+            A.Style.openRadioWindow(playerNum, "airwaves")
+        end
+    end)
+end
+
+function Cl.onKeyPressed(key)
+    local bind = tonumber(Cl.options.radioKey) or 67
+    if key == bind then
+        local p = player0(0)
+        if p ~= nil and not p:isDead() and A.Style and type(A.Style.openRadioWindow) == "function" then
+            A.Style.openRadioWindow(0, nil)
+        end
+    end
+end
+
 function Cl.fill(playerNum, context, worldobjects, test)
     if not Cl.options.menu then return end
     local player = player0(playerNum)
     if player == nil or player:isDead() then return end
     local rows = A.Convoy.near(player, 18)
+    local nearDrop = nil
+    local px, py = A.xyz(player)
+    if px ~= nil then
+        for _, d in ipairs(Cl.dispatches or {}) do
+            if d.state == "ready" and d.x and A.dist(px, py, d.x, d.y) <= 25 then
+                nearDrop = d
+                break
+            end
+        end
+    end
+    if #rows == 0 and nearDrop ~= nil and test ~= true and type(context) == "table" and type(context.addOption) == "function" then
+        option(context, L.ui("rbtn_claim_drop", "Claim Supply Drop") .. " [" .. tostring(nearDrop.callsign or "") .. "]", function()
+            Cl.send("radio_claim_drop", { id = nearDrop.id }, playerNum)
+        end)
+        return
+    end
     if #rows == 0 then return end
     if test == true then
         if ISWorldObjectContextMenu and type(ISWorldObjectContextMenu.setTest) == "function" then
@@ -191,6 +265,9 @@ function Cl.fill(playerNum, context, worldobjects, test)
     context:addSubMenu(root, submenu)
     local function send(command) return function() Cl.send(command, { vehicleId = id }, playerNum) end end
     option(submenu,L.ui("open_contact","Open convoy panel"),function() A.Style.openContact(id,playerNum) end)
+    option(submenu,L.ui("menu_open_radio","[A-LIFE] Caravan Radio & Dispatch (101.6 MHz)"),function()
+        if A.Style and type(A.Style.openRadioWindow) == "function" then A.Style.openRadioWindow(playerNum, "airwaves") end
+    end)
     if A.settings.sosContracts and entry.sosState ~= nil then
         if entry.sosState == "open" and not entry.hostile then
             option(submenu, L.ui("sos_accept", "SOS: cover the convoy's escape"), send("distress_help"))
@@ -272,12 +349,17 @@ function Cl.installOptions()
         local worldMap = options:addTickBox("worldMap", "UI_ALC_Opt_WorldMap", true, "UI_ALC_Opt_WorldMap_tt")
         local minimap = options:addTickBox("minimap", "UI_ALC_Opt_Minimap", true, "UI_ALC_Opt_Minimap_tt")
         local labels = options:addTickBox("labels", "UI_ALC_Opt_Labels", true, "UI_ALC_Opt_Labels_tt")
+        local defaultKey = (type(Keyboard) == "table" and Keyboard.KEY_F9) or 67
+        local radioKey = options.addKeyBind and options:addKeyBind("radioKey", "UI_ALC_Opt_RadioKey", defaultKey, "UI_ALC_Opt_RadioKey_tt") or nil
         options.apply = function()
             Cl.options.menu = menu:getValue() ~= false
             Cl.options.notices = notices:getValue() ~= false
             A.Map.options.worldMap = worldMap:getValue() ~= false
             A.Map.options.minimap = minimap:getValue() ~= false
             A.Map.options.labels = labels:getValue() ~= false
+            if radioKey and type(radioKey.getValue) == "function" then
+                Cl.options.radioKey = tonumber(radioKey:getValue()) or defaultKey
+            end
         end
         options:apply()
     end)
@@ -297,9 +379,12 @@ end
 if not A.clientRegistered then
     A.clientRegistered = true
     Cl.installOptions()
+    A.log("v" .. A.VERSION .. " client loaded")
     if type(Events) == "table" then
+        if Events.OnFillInventoryObjectContextMenu then Events.OnFillInventoryObjectContextMenu.Add(Cl.fillInventoryMenu) end
         if Events.OnFillWorldObjectContextMenu then Events.OnFillWorldObjectContextMenu.Add(Cl.fill) end
         if Events.OnServerCommand then Events.OnServerCommand.Add(Cl.receive) end
+        if Events.OnKeyPressed then Events.OnKeyPressed.Add(function(k) pcall(Cl.onKeyPressed, k) end) end
         if Events.OnTick then Events.OnTick.Add(function() pcall(Cl.tick) end) end
         if Events.OnGameStart then Events.OnGameStart.Add(function() pcall(A.Map.install) end) end
         if Events.OnWeaponSwingHitPoint then

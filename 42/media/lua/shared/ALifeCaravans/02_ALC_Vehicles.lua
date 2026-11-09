@@ -321,13 +321,17 @@ end
 
 -- Scripts for a caravan: up to four cars (two A-Life arrival units). A military
 -- or police convoy fills the maximum; others take enough cars for the crew.
-function V.convoy(class, crewCount, maxVehicles)
+function V.convoy(class, crewCount, maxVehicles, minVehicles)
     local scripts = {}
     local seatsTotal = 0
     local limit = math.max(1, math.min(4, math.floor(tonumber(maxVehicles) or 2)))
+    local minFloor = math.min(limit, math.max(1, math.floor(tonumber(minVehicles or (A.settings and A.settings.minVehicles)) or 2)))
+    if (tonumber(crewCount) or 2) < minFloor * 2 then
+        minFloor = math.max(1, math.floor((tonumber(crewCount) or 2) / 2))
+    end
     local fill = class == "military" or class == "police"
     for index = 1, limit do
-        if index > 1 and not fill and seatsTotal >= crewCount then break end
+        if index > minFloor and not fill and seatsTotal >= crewCount then break end
         local name = V.pick(class, A.randFloat())
         if name == nil then break end
         scripts[#scripts + 1] = name

@@ -72,5 +72,17 @@
     "Sandbox_ALifeCaravans_EconomyEnabled": "Regional town supply and demand economy",
     "Sandbox_ALifeCaravans_EconomyEnabled_tooltip": "Towns track shortages and surpluses across medical, food, ammo, fuel, and tools. Caravans route toward shortages and pay higher barter credit for scarce goods.",
     "Sandbox_ALifeCaravans_FieldServices": "Roadside repair assistance and field services",
-    "Sandbox_ALifeCaravans_FieldServices_tooltip": "Allows players to help repair/refuel halted convoys for pay and favor, request field first aid from medics, donate relief supplies, and service player vehicles."
+    "Sandbox_ALifeCaravans_FieldServices_tooltip": "Allows players to help repair/refuel halted convoys for pay and favor, request field first aid from medics, donate relief supplies, and service player vehicles.",
+    "Sandbox_ALifeCaravans_MinVehicles": "Minimum vehicles per caravan",
+    "Sandbox_ALifeCaravans_MinVehicles_tooltip": "Minimum number of vehicles in an organized caravan convoy (default 2, since single survivor cars are driven by Project A-Life 1.5 CarLife).",
+    "Sandbox_ALifeCaravans_RadioFreqKhz": "Caravan Trade Net frequency (Hz)",
+    "Sandbox_ALifeCaravans_RadioFreqKhz_tooltip": "Frequency in Hz for the Caravan and Trade Net radio channel (101600 is 101.6 MHz). Automatically avoids frequencies reserved by Project A-Life.",
+    "Sandbox_ALifeCaravans_RadioDispatchEnabled": "Enable Radio Caravan Dispatch and Supply Drops",
+    "Sandbox_ALifeCaravans_RadioDispatchEnabled_tooltip": "Allows players with a radio to hail the nearest trading caravan, order roadside supply drops, and request town market intel on 101.6 MHz.",
+    "Sandbox_ALifeCaravans_SupplyDropCooldownMinutes": "Supply drop cooldown (real minutes)",
+    "Sandbox_ALifeCaravans_SupplyDropCooldownMinutes_tooltip": "Waiting time in real minutes between roadside supply drop requests per player.",
+    "Sandbox_ALifeCaravans_AutoMapMarkers": "Auto-mark radio coordinates on map",
+    "Sandbox_ALifeCaravans_AutoMapMarkers_tooltip": "Automatically annotate intercepted caravan radio coordinates and supply drops on the world map when carrying a pen or pencil.",
+    "Sandbox_ALifeCaravans_RequirePoweredRadio": "Require powered radio for dispatch",
+    "Sandbox_ALifeCaravans_RequirePoweredRadio_tooltip": "Require a turned-on, powered radio (in inventory, hands, vehicle, or nearby) to hail caravans or order supply drops."
 }

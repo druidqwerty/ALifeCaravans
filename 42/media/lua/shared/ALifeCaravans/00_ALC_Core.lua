@@ -8,7 +8,7 @@ ALifeCaravans = ALifeCaravans or {}
 local A = ALifeCaravans
 
 A.MOD_ID = "ALifeCaravans"
-A.VERSION = "0.7.2"
+A.VERSION = "0.8.0"
 A.TAG = "[ALC]"
 A.MODULE = "ALifeCaravans"        -- client<->server command module name
 A.MODDATA_ID = "ALifeCaravanId"   -- vehicle ModData key (authoritative side only)
@@ -20,8 +20,9 @@ A.defaults = {
     maxCaravans = 5,              -- more caravans on the map
     foundIntervalMinutes = 5,     -- real minutes between new caravans
     cruiseKmh = 35,               -- convoy cruising speed
-    crewMin = 3,
+    crewMin = 4,
     crewMax = 8,
+    minVehicles = 2,              -- organized multi-car convoys by default (single cars are driven by A-Life 1.5 CarLife)
     maxVehicles = 4,              -- cars per caravan (two A-Life arrival units of two cars)
     renderRadius = 120,           -- a caravan this close to a player drives for real
     releaseRadius = 200,          -- this far from every player it goes back to the ledger
@@ -58,6 +59,11 @@ A.defaults = {
     trophyVehicleCondition = 40,  -- max part/fuel % condition on cars left after crew is wiped out
     economyEnabled = true,        -- regional town supply & demand market
     fieldServices = true,         -- roadside first aid, repair/refuel assistance, and road intel
+    radioFreqKhz = 101600,        -- 101.6 MHz Caravan & Trade Net frequency
+    radioDispatchEnabled = true,  -- hail caravans, order supply drops, and request market intel by radio
+    supplyDropCooldownMinutes = 10,
+    autoMapMarkers = true,        -- auto-annotate radio coordinates on WorldMapSymbols when carrying pen/pencil
+    requirePoweredRadio = true,   -- require a turned-on powered radio for radio dispatch & drops
 }
 A.settings = A.settings or {}
 for key, value in pairs(A.defaults) do A.settings[key] = value end
@@ -68,6 +74,7 @@ A.metrics = {
     recrews = 0, abandoned = 0, unstuck = 0, rescouts = 0, escorts = 0, ambushes = 0, radio = 0, barters = 0,
     events = 0, scavenging = 0, breakdowns = 0, refuels = 0, merges = 0, lostCargo = 0, playerCaravans = 0,
     deliveries = 0, repairs = 0, services = 0, shots = 0,
+    radioDispatches = 0, supplyDrops = 0, supplyClaimed = 0, marketIntel = 0, mapMarks = 0,
 }
 
 function A.now()
@@ -211,6 +218,7 @@ function A.refreshSettings()
     s.crewMin = A.clamp(sandbox.CrewMin, 2, 12, d.crewMin)
     s.crewMax = math.max(s.crewMin, A.clamp(sandbox.CrewMax, 2, 12, d.crewMax))
     s.maxVehicles = A.clamp(sandbox.MaxVehicles, 1, 4, d.maxVehicles)
+    s.minVehicles = math.min(s.maxVehicles, A.clamp(sandbox.MinVehicles, 1, 4, d.minVehicles))
     s.renderRadius = A.clamp(sandbox.RenderRadius, 60, 200, d.renderRadius)
     s.releaseRadius = math.max(s.renderRadius + 30, A.clamp(sandbox.ReleaseRadius, 90, 300, d.releaseRadius))
     s.minSpawnDistance = A.clamp(sandbox.MinSpawnDistance, 25, 90, d.minSpawnDistance)
@@ -246,6 +254,11 @@ function A.refreshSettings()
     s.trophyVehicleCondition = A.clamp(sandbox.TrophyVehicleCondition, 10, 100, d.trophyVehicleCondition)
     s.economyEnabled = sandbox.EconomyEnabled ~= false
     s.fieldServices = sandbox.FieldServices ~= false
+    s.radioFreqKhz = A.clamp(sandbox.RadioFreqKhz, 88000, 108000, d.radioFreqKhz)
+    s.radioDispatchEnabled = sandbox.RadioDispatchEnabled ~= false
+    s.supplyDropCooldownMinutes = A.clamp(sandbox.SupplyDropCooldownMinutes, 1, 120, d.supplyDropCooldownMinutes)
+    s.autoMapMarkers = sandbox.AutoMapMarkers ~= false
+    s.requirePoweredRadio = sandbox.RequirePoweredRadio ~= false
     return true
 end
 

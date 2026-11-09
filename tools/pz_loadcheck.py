@@ -25,6 +25,7 @@ ROOT = os.path.join(HERE, "loadcheck", "run")
 CACHE = os.path.join(ROOT, "cache")
 PIDFILE = os.path.join(ROOT, "pid.json")
 MODS = {
+    "ZombieBuddy": os.path.join(WSC, "3619862853", "mods", "ZombieBuddy"),
     "ProjectALifeNPCs": os.path.join(WSC, "3803984183", "mods", "ProjectALifeNPCs"),
     "ALifeCaravans": REPO,
 }
@@ -65,14 +66,21 @@ def start():
     for name, src in MODS.items():
         if not os.path.isdir(src):
             raise SystemExit("missing mod folder " + src)
-        shutil.copytree(src, os.path.join(md, name), ignore=shutil.ignore_patterns(".git", "tools", "docs", "scratch", "dist"))
+        shutil.copytree(src, os.path.join(md, name),
+                        ignore=shutil.ignore_patterns("c", "doc", "java", ".git") if name == "ZombieBuddy"
+                        else shutil.ignore_patterns(".git", "tools", "docs", "scratch", "dist", "__pycache__"))
     write(os.path.join(md, "default.txt"),
           "VERSION = 1,\n\nmods\n{\n" + "".join(f"    mod = {m},\n" for m in MODS) + "}\n\nmaps\n{\n}\n")
     write(os.path.join(md, "reset-mods-42_00.txt"),
           "If this file does not exist, default.txt will be reset to empty (no mods active).")
     write(os.path.join(CACHE, "options.ini"), options_ini())
+    zbcfg = os.path.join(ROOT, "zbcfg")
+    os.makedirs(zbcfg, exist_ok=True)
+    json.dump({"trusted_authors": [], "auto_fix_mod_order": False, "fix_approval_dialog_cursor": True, "preload_mods": {}},
+              open(os.path.join(zbcfg, "config.json"), "w"), indent=2)
     log = open(os.path.join(ROOT, "client.out.log"), "w", encoding="utf-8", errors="replace")
-    args = [JAVA, "-Djava.awt.headless=true", "--enable-native-access=ALL-UNNAMED",
+    args = [JAVA, f"-agentlib:zbNative=policy=allow-all,config_dir={zbcfg}",
+            "-Djava.awt.headless=true", "--enable-native-access=ALL-UNNAMED",
             "--add-exports=java.base/jdk.internal.misc=ALL-UNNAMED", "-XX:-CreateCoredumpOnCrash",
             "-XX:-OmitStackTraceInFastThrow", "-XX:+UseZGC", "-Dzomboid.steam=0", "-Xmx4096m",
             "-Djava.library.path=./win64/;./", "-cp", "./;projectzomboid.jar", "zombie.gameStates.MainScreenState",
@@ -118,14 +126,12 @@ def wait(seconds):
         p = console_path()
         if os.path.isfile(p):
             txt = open(p, encoding="utf-8", errors="replace").read()
-            if "ALC_Boot" in txt or "ALifeCaravans/ALC_Boot" in txt:
+            if "loading ALifeCaravans" in txt and "[ALC] v" in txt:
                 seen_mod = True
-            if seen_mod and ("MainScreenState" in txt and "FMOD" not in txt[-4000:] and len(txt) > 20000):
-                pass
-            if re.search(r"MainScreen.*(ready|entered)|JoypadManager|UIManager.*init|GameWindow.*init", txt) and seen_mod:
-                time.sleep(15)
+            if seen_mod and ("STATE: exit zombie.gameStates.TermsOfServiceState" in txt or "OnLoadSoundbanks" in txt):
+                time.sleep(5)
                 break
-        time.sleep(5)
+        time.sleep(3)
     print("waited", int(time.time() - t0), "s; mod lua seen:", seen_mod)
     lines = findings()
     errors = [ln for ln in lines if re.search(r"ERROR|attempted index|stack traceback|error", ln, re.I)]

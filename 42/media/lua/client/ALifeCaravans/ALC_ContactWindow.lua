@@ -13,6 +13,7 @@ local actions={
     {"assist_repair","panel_repair","Help repair / refuel"}, {"field_aid","panel_aid","Field first aid"},
     {"donate_supplies","panel_donate","Donate supplies"}, {"vehicle_service","panel_vservice","Service my vehicle"},
     {"distress_help","panel_rescue","Help the crew"}, {"caravan_status","panel_status","Detailed status"},
+    {"radio_panel","panel_radio","Radio Dispatch (101.6)"},
 }
 
 if Panel then
@@ -67,6 +68,12 @@ if Panel then
 
     function Panel:act(button)
         if button.enable==false then return end
+        if button.command=="radio_panel" then
+            if A.Style and type(A.Style.openRadioWindow)=="function" then
+                A.Style.openRadioWindow(self.playerNum,"airwaves")
+            end
+            return
+        end
         if A.Convoy.entry(self.vehicleId)==nil then self:close() return end
         A.Client.send(button.command,{vehicleId=self.vehicleId},self.playerNum)
     end

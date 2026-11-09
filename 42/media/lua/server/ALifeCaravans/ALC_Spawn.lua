@@ -264,6 +264,24 @@ function S.install()
             return original(owner, s)
         end
     end, "VehicleArrivals.finished")
+    if type(p.CarLifeServer) == "table" and type(p.CarLifeServer.keepCar) == "function" then
+        A.wrap(p.CarLifeServer, "keepCar", function(original)
+            return function(car, ...)
+                if car ~= nil and A.vehicleTag(car) ~= nil then return end
+                return original(car, ...)
+            end
+        end, "CarLifeServer.keepCar")
+    end
+    if type(p.CarLife) == "table" and type(p.CarLife.eligible) == "function" then
+        A.wrap(p.CarLife, "eligible", function(original)
+            return function(f, ...)
+                if type(f) == "table" and f.carKey ~= nil and A.Ledger and type(A.Ledger.byVehicle) == "function" then
+                    if A.Ledger.byVehicle(tonumber(f.carKey)) ~= nil then return false, "alc_caravan_vehicle" end
+                end
+                return original(f, ...)
+            end
+        end, "CarLife.eligible")
+    end
     return true
 end
 

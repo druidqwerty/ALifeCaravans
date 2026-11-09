@@ -47,7 +47,7 @@ option ALifeCaravans.CrewMin
 	type = integer,
 	min = 2,
 	max = 12,
-	default = 3,
+	default = 4,
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_CrewMin,
@@ -62,6 +62,17 @@ option ALifeCaravans.CrewMax
 
 	page = ALifeCaravans,
 	translation = ALifeCaravans_CrewMax,
+}
+
+option ALifeCaravans.MinVehicles
+{
+	type = integer,
+	min = 1,
+	max = 4,
+	default = 2,
+
+	page = ALifeCaravans,
+	translation = ALifeCaravans_MinVehicles,
 }
 
 option ALifeCaravans.MaxVehicles
@@ -397,5 +408,49 @@ option ALifeCaravans.FieldServices
 	default = true,
 	page = ALifeCaravans,
 	translation = ALifeCaravans_FieldServices,
+}
+
+option ALifeCaravans.RadioFreqKhz
+{
+	type = integer,
+	min = 88000,
+	max = 108000,
+	default = 101600,
+	page = ALifeCaravans,
+	translation = ALifeCaravans_RadioFreqKhz,
+}
+
+option ALifeCaravans.RadioDispatchEnabled
+{
+	type = boolean,
+	default = true,
+	page = ALifeCaravans,
+	translation = ALifeCaravans_RadioDispatchEnabled,
+}
+
+option ALifeCaravans.SupplyDropCooldownMinutes
+{
+	type = integer,
+	min = 1,
+	max = 120,
+	default = 10,
+	page = ALifeCaravans,
+	translation = ALifeCaravans_SupplyDropCooldownMinutes,
+}
+
+option ALifeCaravans.AutoMapMarkers
+{
+	type = boolean,
+	default = true,
+	page = ALifeCaravans,
+	translation = ALifeCaravans_AutoMapMarkers,
+}
+
+option ALifeCaravans.RequirePoweredRadio
+{
+	type = boolean,
+	default = true,
+	page = ALifeCaravans,
+	translation = ALifeCaravans_RequirePoweredRadio,
 }
 

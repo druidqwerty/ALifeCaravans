@@ -23,6 +23,8 @@ require "ALifeCaravans/ALC_SOSMonitor"
 require "ALifeCaravans/ALC_Crew"
 require "ALifeCaravans/ALC_Lifecycle"
 require "ALifeCaravans/ALC_Threats"
+require "ALifeCaravans/09_ALC_Radio"
+require "ALifeCaravans/ALC_RadioServer"
 
 local A = ALifeCaravans
 local D = { nextTickMs = 0, intervalMs = 2000, lastTickMs = nil, renderCooldownUntilMs = 0, publishAtMs = 0,
@@ -781,30 +783,38 @@ function D.ambushTick(caravan, now, players)
     end
 end
 
--- Convoy chatter on A-Life's Knox County Radio when a caravan is in range.
+-- Convoy chatter on A-Life's Knox County Radio and the 101.6 MHz Caravan Trade Net.
 function D.radioTick(now, players)
     if not A.settings.radioChatter or now < D.radioAtMs then return end
     D.radioAtMs = now + D.radioEveryMs
-    local radio = P() and P().KnoxCountyRadio
-    if radio == nil or type(radio.enabled) ~= "function" or radio.channel == nil then return end
-    local ok, enabled = pcall(radio.enabled)
-    if not ok or not enabled then return end
     local best, bestD = nil, 600
     for _, caravan in ipairs(A.Ledger.list()) do
         local _, d = nearestPlayer(players, caravan.x or 0, caravan.y or 0)
         if d < bestD and caravan.kind ~= "raid" then best, bestD = caravan, d end
     end
-    if best == nil or type(RadioBroadCast) ~= "table" and type(RadioBroadCast) ~= "userdata" then return end
-    local text = A.Lines.text("radio", D.vars(best))
+    if best == nil then return end
+    local vars = D.vars(best)
+    local text = A.Lines.text("radio", vars)
     if text == nil then return end
-    local sent = pcall(function()
-        local channel = radio.channel
-        if channel:getAiringBroadcast() ~= nil then error("busy") end
-        local broadcast = RadioBroadCast.new("alc-" .. tostring(now), -1, -1)
-        broadcast:AddRadioLine(RadioLine.new(text, 0.8, 0.9, 0.75))
-        channel:setAiringBroadcast(broadcast)
-    end)
-    if sent then A.metrics.radio = A.metrics.radio + 1 end
+    local aired = false
+    if A.RadioServer and type(A.RadioServer.air) == "function" then
+        local entry = A.RadioServer.air(best.callsign or best.name, text, { x = best.x, y = best.y, town = vars.town, kind = "chatter" })
+        if entry ~= nil then aired = true end
+    end
+    local radio = P() and (P().KnoxCountyRadio or P().KnoxRadio)
+    if not aired and radio ~= nil and type(radio.enabled) == "function" and radio.channel ~= nil then
+        local ok, enabled = pcall(radio.enabled)
+        if ok and enabled and (type(RadioBroadCast) == "table" or type(RadioBroadCast) == "userdata") then
+            local sent = pcall(function()
+                local channel = radio.channel
+                if channel:getAiringBroadcast() ~= nil then error("busy") end
+                local broadcast = RadioBroadCast.new("alc-" .. tostring(now), -1, -1)
+                broadcast:AddRadioLine(RadioLine.new(text, 0.8, 0.9, 0.75))
+                channel:setAiringBroadcast(broadcast)
+            end)
+            if sent then A.metrics.radio = A.metrics.radio + 1 end
+        end
+    end
 end
 
 function D.vars(caravan)
@@ -960,16 +970,34 @@ function D.publish(force)
     D.publishAtMs = now + 4000
     D.publishDirty = false
     local known, markers = D.knownTable(), D.markerTable()
+    local radioLog = A.RadioServer and A.RadioServer.recentBroadcasts() or {}
+    local dispatches = A.RadioServer and A.RadioServer.activeDispatches() or {}
+    local markets = A.RadioServer and A.RadioServer.marketSummaryList() or {}
     if A.side() == "server" then
-        pcall(sendServerCommand, A.MODULE, "state", { known = known, markers = markers })
+        pcall(sendServerCommand, A.MODULE, "state", {
+            known = known, markers = markers, radioLog = radioLog, dispatches = dispatches, markets = markets,
+        })
     else
         A.Convoy.setKnown(known)
         if A.Client ~= nil and type(A.Client.setMarkers) == "function" then pcall(A.Client.setMarkers, markers) end
+        if A.Client ~= nil and type(A.Client.setRadioState) == "function" then
+            pcall(A.Client.setRadioState, radioLog, dispatches, markets)
+        end
     end
 end
 
 function D.sendState(player)
-    if A.side() == "server" then pcall(sendServerCommand, player, A.MODULE, "state", { known = D.knownTable(), markers = D.markerTable() }) end
+    local known, markers = D.knownTable(), D.markerTable()
+    local radioLog = A.RadioServer and A.RadioServer.recentBroadcasts() or {}
+    local dispatches = A.RadioServer and A.RadioServer.activeDispatches() or {}
+    local markets = A.RadioServer and A.RadioServer.marketSummaryList() or {}
+    if A.side() == "server" then
+        pcall(sendServerCommand, player, A.MODULE, "state", {
+            known = known, markers = markers, radioLog = radioLog, dispatches = dispatches, markets = markets,
+        })
+    elseif A.Client ~= nil and type(A.Client.setRadioState) == "function" then
+        pcall(A.Client.setRadioState, radioLog, dispatches, markets)
+    end
 end
 
 -- Reports from the driving side.

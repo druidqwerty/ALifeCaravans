@@ -18,6 +18,8 @@ require "ALifeCaravans/ALC_Spawn"
 require "ALifeCaravans/ALC_Director"
 require "ALifeCaravans/ALC_Interact"
 require "ALifeCaravans/ALC_Recovery"
+require "ALifeCaravans/09_ALC_Radio"
+require "ALifeCaravans/ALC_RadioServer"
 
 local A = ALifeCaravans
 local B = { installed = false, tries = 0, settingsAtMs = 0, minute = 0, lastReport = nil, retryAtMs = 0 }
@@ -38,6 +40,9 @@ function B.install()
             A.Interact.install()
             if not A.Interact.installed then return false end
             A.Ledger.open()
+            if A.RadioServer and type(A.RadioServer.loadChannel) == "function" then
+                pcall(A.RadioServer.loadChannel, nil)
+            end
         end
         return true
     end)
