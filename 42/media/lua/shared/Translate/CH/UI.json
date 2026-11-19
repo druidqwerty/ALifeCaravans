@@ -1,0 +1,15 @@
+{
+    "UI_ALC_Options_Info": "A-Life: Caravans。這裡是你自己的個人選項。所有對整局遊戲生效的設定（車隊數量、行駛速度、貿易、搭便車等）均位於主機的沙盒選項「A-Life: Caravans」頁面中。",
+    "UI_ALC_Opt_Menu": "右鍵選單顯示車隊選項",
+    "UI_ALC_Opt_Menu_tt": "當車隊車輛位於 18 格以內時，在右鍵選單中顯示 [A-LIFE] 車隊項目。",
+    "UI_ALC_Opt_Notices": "交易提示",
+    "UI_ALC_Opt_Notices_tt": "向車隊購買物品或繳納過路費時，在頭頂顯示一行簡短提示。",
+    "UI_ALC_Opt_WorldMap": "在世界地圖上顯示車隊",
+    "UI_ALC_Opt_WorldMap_tt": "在世界地圖 (M) 上繪製所有車隊（帳本中行駛或道路上的車隊）：按類型著色的車輛圖示、航向標記與呼號。",
+    "UI_ALC_Opt_Minimap": "在小地圖上顯示車隊",
+    "UI_ALC_Opt_Minimap_tt": "在小地圖上顯示小型車隊標記。",
+    "UI_ALC_Opt_Labels": "標記文字標籤",
+    "UI_ALC_Opt_Labels_tt": "在世界地圖標記旁顯示車隊呼號與類型。",
+    "UI_ALC_Opt_RadioKey": "開啟車隊電台與路邊補給投送視窗",
+    "UI_ALC_Opt_RadioKey_tt": "用於開啟或關閉 101.6 MHz 車隊電台與路邊補給投送視窗的快捷鍵（預設：F9）。"
+}

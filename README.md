@@ -4,11 +4,18 @@
 
 Faction caravans for [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sharedfiles/filedetails/?id=3803984183) by Vice. Far from players, convoys travel between towns in a persistent ledger; nearby, they become real cars with NPC drivers and passengers. Catch up, flag them down, trade, ride along or help them escape an ambush.
 
-[Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3829571361) · [Source / releases (MIT)](https://github.com/druidqwerty/ALifeCaravans) · [Русский](README_RU.md)
+[Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3829571361) · [Source / releases (MIT)](https://github.com/druidqwerty/ALifeCaravans) · [Русский](README_RU.md) · [简体中文](README_CN.md)
 
 Free and open source. The code is developed with AI; direction, testing and time are mine. [Support the mods on Boosty](https://boosty.to/lrgpp).
 
-> **0.8.0 — Updated for Project A-Life 1.5 / 1.5.1! Full compatibility with A-Life 1.5.1 (`CarLife`, `Cars2`, `VehicleEvasion`, `RadioReserved`), organized 2–4 car convoys by default (`MinVehicles = 2`), and 101.6 MHz Caravan Radio Dispatch & Roadside Supply Drops (`09_ALC_Radio.lua`, `ALC_RadioServer.lua`, `ALC_RadioWindow.lua`).** See [verification and limits](TEST_0.8.0.md).
+> **0.8.1 — Added Simplified & Traditional Chinese localization (`CN` / `CH`) across all convoy NPC dialogue, contact/trade/radio UI, Sandbox settings, and personal Mod Options (on top of the 0.8.0 Project A-Life 1.5.1 compatibility & 101.6 MHz Radio Dispatch release).** See [0.8.0 verification and limits](TEST_0.8.0.md).
+
+## New in 0.8.1
+
+- **Complete Chinese localization (`Translate/CN` & `Translate/CH`, EN/RU/CN/CH parity):**
+  - Added full Simplified Chinese (`CN`) and Traditional Chinese (`CH`) translations across `IG_UI.json`, `Sandbox.json`, and `UI.json`, plus [README_CN.md](README_CN.md) and Steam Workshop CN/CH store pages.
+  - Vanilla Project Zomboid Build 42 includes built-in `CH` font glyph coverage out of the box; `CN` provides Simplified Chinese text.
+  - No `.lua` runtime files were changed from `0.8.0`.
 
 ## New in 0.8.0
 
@@ -78,7 +85,7 @@ Free and open source. The code is developed with AI; direction, testing and time
 - **Use a controller:** caravan context discovery is supported; in the trade window, A selects quantity, left/right switch columns, up/down select rows, X trades, Y clears and B closes. Split-screen interactions retain the initiating player's slot.
 - **Ride or escort:** ask for a free seat or accept a destination escort contract. Cars carrying players are protected from routine removal. Ordinary escort contracts are separate from SOS rescue.
 - **Answer SOS:** accept a friendly ambushed convoy's rescue, stay close and cover genuine NPC-driven escape. Defaults require 80 tiles and at least 30 seconds of movement; success awards +3 favor once. Accepting alone, offline ledger movement and teleport jumps do not earn the reward.
-- **Face consequences:** threatening civilians can yield one item before they flee; military, police and raiders can fight. A paid raider toll grants a temporary truce. A-Life reputation and EN/RU radio/dialogue remain part of the encounter.
+- **Face consequences:** threatening civilians can yield one item before they flee; military, police and raiders can fight. A paid raider toll grants a temporary truce. A-Life reputation and EN/RU/CN/CH radio/dialogue remain part of the encounter.
 
 ## Crews should return to their cars
 

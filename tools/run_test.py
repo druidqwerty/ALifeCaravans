@@ -28,9 +28,15 @@ MOD_ROOT = os.path.dirname(HERE).replace("\\", "/")
 TRANSLATE = os.path.join(MOD_ROOT, "42", "media", "lua", "shared", "Translate")
 
 
+LANGUAGES = ("EN", "RU", "CN", "CH")
+PLACEHOLDER_RE = re.compile(r"\{(\w+)\}")
+
+
 def load(lang, name):
     with open(os.path.join(TRANSLATE, lang, name), "rb") as handle:
         raw = handle.read()
+    if raw.startswith(b"\xef\xbb\xbf"):
+        raise ValueError(f"UTF-8 BOM is not allowed in {lang}/{name}")
     return json.loads(raw.decode("utf-8"))
 
 
@@ -61,17 +67,34 @@ def main():
                 print("FAIL CustomSandboxOptions comment", sandbox_path, "line", line_number)
                 failed += 1
     for name in ("IG_UI.json", "UI.json", "Sandbox.json"):
-        en, ru = load("EN", name), load("RU", name)
-        if set(en) != set(ru):
-            print("FAIL translation keys differ in", name, sorted(set(en) ^ set(ru)))
-            failed += 1
-        for key, value in list(en.items()) + list(ru.items()):
-            if not str(value).strip():
-                print("FAIL empty translation", name, key)
+        loaded_langs = {}
+        for lang in LANGUAGES:
+            try:
+                loaded_langs[lang] = load(lang, name)
+            except Exception as error:  # noqa: BLE001
+                print("FAIL translation load", lang, name, error)
                 failed += 1
-            if "%" in str(value):
-                print("FAIL percent sign in translation", name, key, value)
+        en = loaded_langs.get("EN")
+        if en is None:
+            continue
+        for lang in LANGUAGES:
+            table_data = loaded_langs.get(lang)
+            if table_data is None:
+                continue
+            if set(table_data) != set(en):
+                print("FAIL translation keys differ in", lang, name, sorted(set(table_data) ^ set(en)))
                 failed += 1
+            for key, value in table_data.items():
+                text = str(value)
+                if not text.strip():
+                    print("FAIL empty translation", lang, name, key)
+                    failed += 1
+                if "%" in text:
+                    print("FAIL percent sign in translation", lang, name, key, value)
+                    failed += 1
+                if key in en and set(PLACEHOLDER_RE.findall(text)) != set(PLACEHOLDER_RE.findall(str(en[key]))):
+                    print("FAIL placeholder mismatch", lang, name, key, PLACEHOLDER_RE.findall(text), "vs", PLACEHOLDER_RE.findall(str(en[key])))
+                    failed += 1
         translations.update(en)
     lua = lupa.LuaRuntime(unpack_returned_tuples=True)
     with open(sandbox_path, encoding="utf-8") as handle:
