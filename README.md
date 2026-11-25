@@ -8,7 +8,16 @@ Faction caravans for [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sh
 
 Free and open source. The code is developed with AI; direction, testing and time are mine. [Support the mods on Boosty](https://boosty.to/lrgpp).
 
-> **0.8.2 — Full compatibility with Project Zomboid 42.22.2 & Project A-Life 1.5.3, plus a critical fix protecting player weapons, tools, radios, keyrings, and hotbar gear during Supply Drop orders (`@PriestSmokey`), real B42 `FluidContainer` refueling, and 11 updated B42.22.2 item/vehicle IDs.**
+> **0.8.3 — Compatibility & stability fix for Project A-Life 1.5.4: eliminates recurring `KahluaException: A teammate is no longer loaded.` console spam (`ALifeDrivingCrew.lua:55` / `ALifeDrivingLifecycle.lua:393` / `ALC_Spawn.lua`), hardens `S.recrew` against dehydrated/unloaded passengers, and preserves varargs for non-caravan A-Life vehicle arrivals.**
+
+## New in 0.8.3
+
+- **Fixed recurring `KahluaException: A teammate is no longer loaded.` console spam (`ALC_Spawn.lua`):**
+  - Added pre-flight validation (`S.validateCreateCrew` + `findCreateNpc`) inside the `DrivingLifecycle.create` wrapper so missing/dead/stale drivers or passengers cleanly defer as `(nil, reason)` instead of raising Kahlua `error()` inside `ALifeDrivingCrew.lua:55` (which Kahlua logs to `console.txt` even under `pcall`).
+  - Automatically invalidates stale 200 ms `DrivingDemo.npcIndex` / `npcMemo` misses before failing a lookup.
+  - Hardened `S.recrew` to revalidate passengers before and after `S.releaseCar`, refresh `boarded` flags against `car:getCharacter(seat)`, drop unloaded/dead passengers cleanly, and roll back `S.releaseCar` (preserving `restoredRiders` state) if session creation fails.
+  - Fixed `VehicleArrivalSites.find` and `VehicleArrivalVehicle.create` wrappers to forward varargs (`script`, `color`) when `S.pending == nil` for non-caravan A-Life 1.5.4 vehicle arrivals.
+  - Verified on **Project Zomboid 42.22.2 + Project A-Life 1.5.4** (`528/528` offline assertions + 5-stage live SP test with `0` `KahluaException`).
 
 ## New in 0.8.2
 

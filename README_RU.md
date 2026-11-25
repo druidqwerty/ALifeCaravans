@@ -8,7 +8,16 @@
 
 Бесплатно и с открытым кодом. Код разрабатывается с помощью ИИ; постановка задач, тестирование и время — мои. [Поддержать моды на Boosty](https://boosty.to/lrgpp).
 
-> **0.8.2 — Полная совместимость с Project Zomboid 42.22.2 и Project A-Life 1.5.3, критический фикс защиты оружия, инструментов, раций, связок ключей и вещей с пояса при заказе сброса припасов (`@PriestSmokey`), работа с канистрами B42 `FluidContainer` и обновление 11 устаревших ID предметов/транспорта.**
+> **0.8.3 — Фикс совместимости и стабильности под Project A-Life 1.5.4: полностью устранён повторяющийся спам `KahluaException: A teammate is no longer loaded.` (`ALifeDrivingCrew.lua:55` / `ALifeDrivingLifecycle.lua:393` / `ALC_Spawn.lua`), усилен `S.recrew` при дегидрации/выгрузке пассажиров и исправлена проброска аргументов для обычных машин A-Life.**
+
+## Новое в 0.8.3
+
+- **Устранён повторяющийся спам `KahluaException: A teammate is no longer loaded.` (`ALC_Spawn.lua`):**
+  - В обёртку `DrivingLifecycle.create` добавлена предварительная проверка экипажа (`S.validateCreateCrew` + `findCreateNpc`), возвращающая `(nil, reason)` вместо вызова `error()` в `ALifeDrivingCrew.lua:55` (который Kahlua пишет в `console.txt` даже под `pcall`).
+  - Добавлен сброс протухшего 200-мс кэша `DrivingDemo.npcIndex` / `npcMemo` при ложных промахах поиска NPC.
+  - В `S.recrew` добавлена перепроверка пассажиров до и после `S.releaseCar`, синхронизация флагов `boarded` с `car:getCharacter(seat)`, чистое отсеивание выгруженных/погибших пассажиров и откат при отказе `create` (с сохранением `restoredRiders`).
+  - В обёртках `VehicleArrivalSites.find` и `VehicleArrivalVehicle.create` исправлена проброска varargs (`script`, `color`) для обычных (не караванных) машин Project A-Life 1.5.4.
+  - Проверено на **Project Zomboid 42.22.2 + Project A-Life 1.5.4** (`528/528` автотестов + живой SP-прогон с `0` `KahluaException`).
 
 ## Новое в 0.8.2
 

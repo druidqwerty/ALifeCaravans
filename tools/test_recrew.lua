@@ -44,4 +44,5 @@ return function(check, newVehicle)
     ACTORS[rows[1].uid], ACTORS[rows[2].uid] = nil,nil
     assert(loadfile(MOD_ROOT .. "/tools/test_rider_reload.lua"))()(check)
     assert(loadfile(MOD_ROOT .. "/tools/test_driver_keys.lua"))()(check)
+    assert(loadfile(MOD_ROOT .. "/tools/test_create_guard.lua"))()(check, newVehicle)
 end

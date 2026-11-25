@@ -129,6 +129,69 @@ function S.reservedByOtherCars(caravan, vehicleId)
     return otherHome, unassignedOtherCars
 end
 
+local function findCreateNpc(demo, uid, generation)
+    if demo == nil or type(demo.findNpc) ~= "function" then return true end
+    local ok, npc = pcall(demo.findNpc, uid, generation)
+    if ok and npc ~= nil then return npc end
+    -- Project A-Life caches zombie-list lookups in DrivingDemo.npcIndex (200 ms)
+    -- without invalidating misses when a shell is rebound in place.
+    if demo.npcIndex ~= nil or (type(demo.npcMemo) == "table" and uid ~= nil) then
+        demo.npcIndex = nil
+        if type(demo.npcMemo) == "table" and uid ~= nil then
+            demo.npcMemo[uid] = nil
+        end
+        ok, npc = pcall(demo.findNpc, uid, generation)
+        if ok and npc ~= nil then return npc end
+    end
+    return nil
+end
+
+-- Pre-flight the exact preconditions checked by DrivingLifecycle.create /
+-- DrivingCrew.attach so missing/dead/stale teammates defer cleanly as
+-- (nil, reason) instead of raising KahluaException inside error().
+function S.validateCreateCrew(p, car, crew)
+    if car == nil or type(crew) ~= "table" or #crew < 1 or type(crew[1]) ~= "table" then
+        return false, "Invalid crew or vehicle."
+    end
+    local driver = crew[1]
+    if driver.uid == nil then
+        return false, "Invalid driver specification."
+    end
+    local demo = p and p.DrivingDemo or nil
+    if findCreateNpc(demo, driver.uid, driver.generation) == nil then
+        return false, "The driver is no longer loaded."
+    end
+    local riderCount = #crew - 1
+    if riderCount > 15 then
+        return false, "Invalid passenger list."
+    end
+    if riderCount == 0 then
+        return true
+    end
+    local maxPass = 16
+    if type(car.getMaxPassengers) == "function" then
+        local okMax, val = pcall(car.getMaxPassengers, car)
+        if okMax and type(val) == "number" then maxPass = val end
+    end
+    local seats, ids = { [0] = true }, { [driver.uid] = true }
+    for i = 2, #crew do
+        local spec = crew[i]
+        if type(spec) ~= "table" or spec.uid == nil then
+            return false, "Invalid passenger list."
+        end
+        local seat = spec.seat
+        if type(seat) ~= "number" or seat ~= math.floor(seat) or seat < 1 or seat >= maxPass
+                or seats[seat] or ids[spec.uid] then
+            return false, "Invalid or duplicate passenger seat."
+        end
+        if findCreateNpc(demo, spec.uid, spec.generation) == nil then
+            return false, "A teammate is no longer loaded."
+        end
+        seats[seat], ids[spec.uid] = true, true
+    end
+    return true
+end
+
 function S.install()
     if S.installed then return true end
     local p = P()
@@ -138,7 +201,7 @@ function S.install()
     end
     S.installed = true
     A.wrap(p.VehicleArrivalSites, "find", function(original)
-        return function(scene, target)
+        return function(scene, target, ...)
             local pending = S.pending
             if pending ~= nil then
                 pending.siteIndex = (pending.siteIndex or 0) + 1
@@ -150,13 +213,13 @@ function S.install()
                 end
                 return nil, "caravan has no site for another car"
             end
-            return original(scene, target)
+            return original(scene, target, ...)
         end
     end, "VehicleArrivalSites.find")
     A.wrap(p.VehicleArrivalVehicle, "create", function(original)
-        return function(site, requestId)
+        return function(site, requestId, ...)
             local pending = S.pending
-            if pending == nil then return original(site, requestId) end
+            if pending == nil then return original(site, requestId, ...) end
             local V = p.VehicleArrivalVehicle
             local previous = V.script
             pending.carIndex = (pending.carIndex or 0) + 1
@@ -212,9 +275,17 @@ function S.install()
     end
     A.wrap(p.DrivingLifecycle, "create", function(original)
         return function(owner, old, car, crew, token, route, boarding)
+            if type(owner) ~= "table" or type(old) ~= "table" then
+                return nil, "Invalid session template."
+            end
+            local ready, whyNot = S.validateCreateCrew(p, car, crew)
+            if not ready then
+                A.debug("DrivingLifecycle.create deferred:", whyNot)
+                return nil, whyNot
+            end
             local tag = A.vehicleTag(car)
             local caravan = tag ~= nil and S.caravanFor(tag) or nil
-            if caravan ~= nil and type(old) == "table" then
+            if caravan ~= nil then
                 local kmh = tonumber(caravan.speedKmh) or A.settings.cruiseKmh
                 local T = p.DrivingTuning
                 if T ~= nil and type(T.copy) == "function" then
@@ -955,10 +1026,59 @@ function S.recrew(caravan, vehicleId, route, limit, reserved)
     -- Keep revisions monotonic across cleanup: remote clients remember them.
     local previousBinding = owner.bindings and owner.bindings[vehicleId]
     local nextRevision = (tonumber(previousBinding and previousBinding.revision) or 0) + 1
+    -- Revalidate passengers before releasing the old session so unloaded/dead
+    -- teammates are never passed into DrivingLifecycle.create / DrivingCrew.attach.
+    local registry = p.ActorRegistry
+    for index = #crew, 2, -1 do
+        local spec = crew[index]
+        local livePassenger = false
+        pcall(function()
+            local actor = registry and registry.read(spec.uid)
+            if actor and actor.uid == spec.uid and actor.lifecycle == "active"
+                    and actor.generation == spec.generation then
+                local body = findCreateNpc(p.DrivingDemo, spec.uid, spec.generation)
+                if body ~= nil and body ~= true and not body:isDead() then
+                    livePassenger = true
+                end
+            end
+        end)
+        if not livePassenger then table.remove(crew, index) end
+    end
     -- Do all fallible planning before releasing the old session.
     if not S.releaseCar(vehicleId, caravan.id) then return false, "foreign_session" end
+    -- S.releaseCar clears Demo.heldSessions and calls DrivingLifecycle.carseatRelease:
+    -- re-verify every body and sync boarded flags against the car's actual seats.
+    local driverAlive = false
+    pcall(function()
+        local body = findCreateNpc(p.DrivingDemo, crew[1].uid, crew[1].generation)
+        if body ~= nil and body ~= true and not body:isDead() then
+            driverAlive = true
+            crew[1].boarded = (car:getCharacter(crew[1].seat) == body) and true or nil
+        end
+    end)
+    if not driverAlive then
+        if restoredRiders and previousBinding ~= nil then
+            owner.bindings = owner.bindings or {}
+            owner.allowRiders = owner.allowRiders or {}
+            owner.carModes = owner.carModes or {}
+            owner.bindings[vehicleId] = previousBinding
+            owner.allowRiders[vehicleId], owner.carModes[vehicleId] = true, "mixed"
+        end
+        return false, "driver_unloaded"
+    end
+    for index = #crew, 2, -1 do
+        local spec = crew[index]
+        local passengerAlive = false
+        pcall(function()
+            local body = findCreateNpc(p.DrivingDemo, spec.uid, spec.generation)
+            if body ~= nil and body ~= true and not body:isDead() then
+                passengerAlive = true
+                spec.boarded = (car:getCharacter(spec.seat) == body) and true or nil
+            end
+        end)
+        if not passengerAlive then table.remove(crew, index) end
+    end
     owner.bindings = owner.bindings or {}
-    local registry = p.ActorRegistry
     for _, member in ipairs(crew) do
         if registry and type(registry.updateTransient)=="function" then
             local readOK, actor=pcall(registry.read,member.uid)
@@ -987,8 +1107,15 @@ function S.recrew(caravan, vehicleId, route, limit, reserved)
     p.VehicleArrivals.active[vehicleId] = car
     p.VehicleArrivals.journeys[vehicleId] = { deadline = A.now() + 86400000, player = player, target = { x = points[#points].x, y = points[#points].y } }
     local ok, s, why = pcall(p.DrivingLifecycle.create, owner, old, car, crew, token, points, true)
-    if not ok then return false, "create_error:" .. tostring(s) end
-    if s == nil then return false, tostring(why or "create_refused") end
+    if not ok or s == nil then
+        S.releaseCar(vehicleId, caravan.id)
+        if restoredRiders then
+            owner.bindings[vehicleId] = previousBinding or binding
+            owner.allowRiders[vehicleId], owner.carModes[vehicleId] = true, "mixed"
+        end
+        if not ok then return false, "create_error:" .. tostring(s) end
+        return false, tostring(why or "create_refused")
+    end
     if type(isServer) == "function" and isServer() then
         local L = p.DrivingLifecycle
         local record = L.suspend(owner, s, false)

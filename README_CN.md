@@ -8,7 +8,16 @@
 
 免费开源。代码在 AI 辅助下编写，方向把控、测试与时间投入由作者本人完成。[在 Boosty 上支持模组开发](https://boosty.to/lrgpp)。
 
-> **0.8.2 — 全面兼容 Project Zomboid 42.22.2 与 Project A-Life 1.5.3，重点修复订购路边补给箱时误扣玩家武器/工具/电台/钥匙串及腰带装备的问题（`@PriestSmokey`），适配 B42 `FluidContainer` 油桶加油，并更新 11 个失效的 B42.22.2 物品与载具 ID。**
+> **0.8.3 — Project A-Life 1.5.4 稳定性修复：彻底消除控制台重复刷屏报错 `KahluaException: A teammate is no longer loaded.`（`ALifeDrivingCrew.lua:55` / `ALifeDrivingLifecycle.lua:393` / `ALC_Spawn.lua`），加固乘客卸载后的 `S.recrew` 恢复逻辑，并修复非车队载具生成的参数透传。**
+
+## 0.8.3 更新内容
+
+- **消除控制台重复刷屏 `KahluaException: A teammate is no longer loaded.`（`ALC_Spawn.lua`）：**
+  - 在 `DrivingLifecycle.create` 钩子中新增前置校验（`S.validateCreateCrew` 与 `findCreateNpc`），当司机或乘客未加载、已死亡、代数过期或座位冲突时平稳返回 `(nil, reason)`，避免触发 `ALifeDrivingCrew.lua:55` 的 `error()` 导致 Kahlua 在控制台持续刷屏。
+  - 修复 200ms `DrivingDemo.npcIndex` / `npcMemo` 过期缓存导致的误判未加载问题。
+  - 加固 `S.recrew`：在 `S.releaseCar` 前后重新校验乘员存活与加载状态、同步 `boarded` 标记并在创建失败时安全回滚（保留 `restoredRiders` 状态）。
+  - 修复 `VehicleArrivalSites.find` 与 `VehicleArrivalVehicle.create` 在非车队载具路径下透传可变参数（`script`、`color`）。
+  - 已在 **Project Zomboid 42.22.2 + Project A-Life 1.5.4** 上通过验证（`528/528` 离线断言 + 实机 SP 5 阶段测试，`0` `KahluaException`）。
 
 ## 0.8.2 更新内容
 
