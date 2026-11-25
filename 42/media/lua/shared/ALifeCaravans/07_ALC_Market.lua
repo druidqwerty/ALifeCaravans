@@ -17,20 +17,21 @@ M.itemCategory = {
     ["Base.SutureNeedle"] = "medical", ["Base.Splint"] = "medical",
     ["Base.TinnedBeans"] = "food", ["Base.CannedCornedBeef"] = "food", ["Base.CannedTomato"] = "food",
     ["Base.CannedChili"] = "food", ["Base.CannedBolognese"] = "food", ["Base.CannedSardines"] = "food",
-    ["Base.WaterBottleFull"] = "food", ["Base.WaterBottle"] = "food", ["Base.MRE"] = "food",
-    ["Base.CannedFruitCocktail"] = "food", ["Base.Coffee"] = "food", ["Base.Sugar"] = "food",
-    ["Base.Rice"] = "food", ["Base.Pasta"] = "food", ["Base.Flour"] = "food", ["Base.Whiskey"] = "food",
-    ["Base.Wine"] = "food", ["Base.Seeds_PotatoBag"] = "food", ["Base.Seeds_CabbageBag"] = "food",
+    ["Base.WaterBottle"] = "food", ["Base.WaterRationCan"] = "food", ["Base.BeefJerky"] = "food",
+    ["Base.CannedFruitCocktail"] = "food", ["Base.Coffee2"] = "food", ["Base.Sugar"] = "food",
+    ["Base.Rice"] = "food", ["Base.Pasta"] = "food", ["Base.Flour2"] = "food", ["Base.Whiskey"] = "food",
+    ["Base.Wine"] = "food", ["Base.PotatoBagSeed2"] = "food", ["Base.CabbageBagSeed2"] = "food",
+    ["Base.CigarettePack"] = "food", ["Base.CigaretteCarton"] = "food",
     ["Base.Bullets9mmBox"] = "ammo", ["Base.Bullets45Box"] = "ammo", ["Base.Bullets38Box"] = "ammo",
-    ["Base.Bullets44Box"] = "ammo", ["Base.ShotgunShellsBox"] = "ammo", ["Base.556Box"] = "ammo",
-    ["Base.308Box"] = "ammo", ["Base.223Box"] = "ammo", ["Base.Pistol"] = "ammo", ["Base.Shotgun"] = "ammo",
+    ["Base.Bullets44Box"] = "ammo", ["Base.Bullets357Box"] = "ammo", ["Base.ShotgunShellsBox"] = "ammo",
+    ["Base.556Box"] = "ammo", ["Base.308Box"] = "ammo", ["Base.Pistol"] = "ammo", ["Base.Shotgun"] = "ammo",
     ["Base.HuntingRifle"] = "ammo", ["Base.Vest_BulletArmy"] = "ammo",
-    ["Base.PetrolCan"] = "fuel", ["Base.EmptyPetrolCan"] = "fuel", ["Base.Battery"] = "fuel",
+    ["Base.PetrolCan"] = "fuel", ["Base.Battery"] = "fuel",
     ["Base.Generator"] = "fuel",
-    ["Base.Axe"] = "tools", ["Base.Hammer"] = "tools", ["Base.Nails"] = "tools", ["Base.Rope"] = "tools",
+    ["Base.Axe"] = "tools", ["Base.Hammer"] = "tools", ["Base.Nails"] = "tools", ["Base.NailsBox"] = "tools", ["Base.Rope"] = "tools",
     ["Base.Saw"] = "tools", ["Base.Crowbar"] = "tools", ["Base.Screwdriver"] = "tools",
     ["Base.Wrench"] = "tools", ["Base.DuctTape"] = "tools", ["Base.Torch"] = "tools",
-    ["Base.Radio.WalkieTalkie4"] = "tools", ["Base.Machete"] = "tools", ["Base.HuntingKnife"] = "tools",
+    ["Base.WalkieTalkie4"] = "tools", ["Base.Machete"] = "tools", ["Base.HuntingKnife"] = "tools",
 }
 
 M.events = {
@@ -40,9 +41,9 @@ M.events = {
         stock = {
             { "Base.Generator", 1, 1 }, { "Base.Axe", 1, 2 }, { "Base.Saw", 1, 2 }, { "Base.Crowbar", 1, 2 },
             { "Base.Wrench", 1, 2 }, { "Base.PetrolCan", 2, 3 }, { "Base.FirstAidKit", 1, 2 },
-            { "Base.Antibiotics", 1, 2 }, { "Base.Seeds_PotatoBag", 2, 3 }, { "Base.Seeds_CabbageBag", 2, 3 },
-            { "Base.Bullets9mmBox", 2, 3 }, { "Base.ShotgunShellsBox", 1, 3 }, { "Base.MRE", 2, 4 },
-            { "Base.Radio.WalkieTalkie4", 1, 2 }, { "Base.Battery", 2, 4 }, { "Base.Coffee", 2, 3 },
+            { "Base.Antibiotics", 1, 2 }, { "Base.PotatoBagSeed2", 2, 3 }, { "Base.CabbageBagSeed2", 2, 3 },
+            { "Base.Bullets9mmBox", 2, 3 }, { "Base.ShotgunShellsBox", 1, 3 }, { "Base.WaterRationCan", 2, 4 },
+            { "Base.WalkieTalkie4", 1, 2 }, { "Base.Battery", 2, 4 }, { "Base.Coffee2", 2, 3 },
         },
     },
     medical_aid = {
@@ -51,7 +52,7 @@ M.events = {
         stock = {
             { "Base.FirstAidKit", 2, 3 }, { "Base.Bandage", 4, 8 }, { "Base.Antibiotics", 2, 4 },
             { "Base.Disinfectant", 2, 4 }, { "Base.SutureNeedle", 2, 3 }, { "Base.Splint", 2, 3 },
-            { "Base.Pills", 3, 5 }, { "Base.PillsAntiDep", 2, 3 }, { "Base.WaterBottleFull", 3, 5 },
+            { "Base.Pills", 3, 5 }, { "Base.PillsAntiDep", 2, 3 }, { "Base.WaterBottle", 3, 5 },
         },
     },
     supply_drop = {
@@ -59,8 +60,9 @@ M.events = {
         escortBonus = 120, service = "road_intel",
         stock = {
             { "Base.556Box", 2, 4 }, { "Base.308Box", 2, 3 }, { "Base.Bullets9mmBox", 2, 4 },
-            { "Base.ShotgunShellsBox", 2, 3 }, { "Base.MRE", 4, 6 }, { "Base.FirstAidKit", 1, 2 },
-            { "Base.Vest_BulletArmy", 1, 2 }, { "Base.Radio.WalkieTalkie4", 1, 2 }, { "Base.PetrolCan", 2, 3 },
+            { "Base.ShotgunShellsBox", 2, 3 }, { "Base.WaterRationCan", 3, 5 }, { "Base.BeefJerky", 2, 4 },
+            { "Base.FirstAidKit", 1, 2 }, { "Base.Vest_BulletArmy", 1, 2 }, { "Base.WalkieTalkie4", 1, 2 },
+            { "Base.PetrolCan", 2, 3 },
         },
     },
     refugees = {
@@ -68,7 +70,7 @@ M.events = {
         shortageCategory = "food", service = "donate_supplies",
         stock = {
             { "Base.Sheet", 2, 4 }, { "Base.Soap2", 1, 3 }, { "Base.Lighter", 1, 2 },
-            { "Base.Cigarettes", 2, 4 }, { "Base.HuntingKnife", 1, 1 }, { "Base.BaseballBat", 1, 1 },
+            { "Base.CigarettePack", 2, 4 }, { "Base.HuntingKnife", 1, 1 }, { "Base.BaseballBat", 1, 1 },
             { "Base.Whiskey", 1, 2 }, { "Base.WaterBottle", 2, 4 },
         },
     },

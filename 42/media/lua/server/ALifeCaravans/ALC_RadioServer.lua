@@ -195,7 +195,6 @@ function RS.hailNearestCaravan(player)
 
     if best.state == "rendered" and realD <= 220 and A.Director and type(A.Director.halt) == "function" then
         A.Director.halt(best, A.settings.haltSeconds or 180, "hail")
-        A.metrics.halts = A.metrics.halts + 1
     elseif best.state == "offline" and G ~= nil then
         -- Nudge offline caravan closer along its route toward the player
         best.t = math.min(0.95, (tonumber(best.t) or 0) + 0.35)
@@ -294,14 +293,26 @@ function RS.claimSupplyDrop(player, dropId)
         return false, "too_far"
     end
     if root.dropReceipts[drop.id] ~= nil then return false, "already_claimed" end
+    local takeRows = {}
+    for _, spec in ipairs(drop.items or {}) do
+        local itemType = spec[1] or spec.item
+        local count = spec[2] or spec.count or 1
+        if type(itemType) == "string" and (not A.Trade or type(A.Trade.exists) ~= "function" or A.Trade.exists(itemType)) then
+            takeRows[#takeRows + 1] = { item = itemType, count = count }
+        end
+    end
+    if #takeRows == 0 then
+        if A.Interact then A.Interact.reply(player, "serviceNotice", { key = "err_drop_failed" }) end
+        return false, "no_valid_items"
+    end
+    local okEx, exErr = A.Trade.exchange(player, { giveRows = {}, takeRows = takeRows })
+    if not okEx then
+        if A.Interact then A.Interact.reply(player, "serviceNotice", { key = "err_drop_failed" }) end
+        return false, exErr or "exchange_failed"
+    end
     drop.state = "claimed"
     drop.claimedMs = A.now()
     root.dropReceipts[drop.id] = { owner = A.playerKey(player), atMs = drop.claimedMs }
-    local takeRows = {}
-    for _, spec in ipairs(drop.items or {}) do
-        takeRows[#takeRows + 1] = { item = spec[1] or spec.item, count = spec[2] or spec.count or 1 }
-    end
-    A.Trade.exchange(player, { giveRows = {}, takeRows = takeRows })
     A.metrics.supplyClaimed = A.metrics.supplyClaimed + 1
     A.Ledger.touch()
     if A.Director then A.Director.publish(true) end

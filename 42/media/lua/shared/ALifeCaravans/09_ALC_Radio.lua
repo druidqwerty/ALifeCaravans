@@ -1,5 +1,5 @@
--- A-Life: Caravans v0.8.0 - Caravan Radio Dispatch, Supply Drops & Market Intel (shared).
--- Integrates 101.6 MHz Caravan & Trade Net with Project A-Life 1.5.1 RadioReserved,
+-- A-Life: Caravans v0.8.2 - Caravan Radio Dispatch, Supply Drops & Market Intel (shared).
+-- Integrates 101.6 MHz Caravan & Trade Net with Project A-Life 1.5.3 RadioReserved,
 -- inspects WalkieTalkies / HamRadios / VehicleRadios, checks writing utensils for
 -- WorldMapSymbols, and defines the 5 roadside Supply Drop packages.
 
@@ -64,12 +64,34 @@ R.PACKAGES = {
         id = "pkg_rations",
         cost = 65,
         items = {
-            { "Base.MRE", 3 },
+            { "Base.WaterRationCan", 2 },
+            { "Base.CannedChili", 2 },
             { "Base.TinnedBeans", 2 },
             { "Base.CannedCornedBeef", 2 },
-            { "Base.WaterBottleFull", 2 },
+            { "Base.BeefJerky", 2 },
+            { "Base.WaterBottle", 2 },
         },
     },
+}
+
+-- Only cash and safe expendable barter commodities can be spent automatically
+-- when ordering a radio supply drop (NEVER weapons, tools, radios, keys, bags, or clothing).
+R.SAFE_BARTER_CATEGORIES = {
+    Food = true, Water = true, FirstAid = true, Medical = true, Material = true, Cooking = true,
+}
+
+R.SAFE_BARTER_TYPES = {
+    ["Base.TinnedBeans"] = true, ["Base.CannedCornedBeef"] = true, ["Base.CannedTomato"] = true,
+    ["Base.CannedChili"] = true, ["Base.CannedBolognese"] = true, ["Base.CannedSardines"] = true,
+    ["Base.CannedFruitCocktail"] = true, ["Base.WaterRationCan"] = true, ["Base.BeefJerky"] = true,
+    ["Base.WaterBottle"] = true, ["Base.Bandage"] = true, ["Base.Antibiotics"] = true,
+    ["Base.Pills"] = true, ["Base.PillsAntiDep"] = true, ["Base.Disinfectant"] = true,
+    ["Base.SutureNeedle"] = true, ["Base.Splint"] = true,
+    ["Base.CigarettePack"] = true, ["Base.CigaretteSingle"] = true, ["Base.CigaretteCarton"] = true,
+    ["Base.Cigarettes"] = true, ["Base.Whiskey"] = true, ["Base.Wine"] = true,
+    ["Base.Coffee2"] = true, ["Base.Sugar"] = true, ["Base.Rice"] = true, ["Base.Pasta"] = true,
+    ["Base.Flour2"] = true, ["Base.DuctTape"] = true, ["Base.Rope"] = true, ["Base.Nails"] = true,
+    ["Base.NailsBox"] = true, ["Base.Sheet"] = true, ["Base.Soap2"] = true,
 }
 
 local function safeCall(obj, method, ...)
@@ -130,7 +152,15 @@ local function inspectDevice(device, sourceKind)
     local turnedOn = safeCall(dd, "getIsTurnedOn") == true
     local power = tonumber(safeCall(dd, "getPower")) or 0
     local isBattery = safeCall(dd, "getIsBatteryPowered")
-    local hasPower = power > 0.001 or isBattery == false or sourceKind == "vehicle" or sourceKind == "world" or sourceKind == "inventory" or sourceKind == "hand"
+    local hasPower
+    if isBattery == true then
+        hasPower = power > 0.001
+    elseif isBattery == false then
+        local canGrid = safeCall(dd, "canBePoweredHere")
+        hasPower = (canGrid ~= false) or power > 0.001
+    else
+        hasPower = power > 0.001
+    end
     local channel = tonumber(safeCall(dd, "getChannel")) or R.frequency()
     local deviceName = tostring(safeCall(dd, "getDeviceName") or safeCall(device, "getName") or "Radio")
     -- Vanilla PZ automatically turns off unequipped inventory radios to save battery;
@@ -269,12 +299,60 @@ function R.canWriteOnMap(player)
     return false
 end
 
+local function isItemClass(item, className)
+    if item == nil or type(instanceof) ~= "function" then return false end
+    local ok, hit = pcall(instanceof, item, className)
+    return ok and hit == true
+end
+
 local function isProtectedItem(player, item)
     if item == nil then return true end
+    if A.Trade and type(A.Trade.isProtectedItem) == "function" and A.Trade.isProtectedItem(player, item) then
+        return true
+    end
     if safeCall(item, "isFavorite") == true then return true end
-    if player ~= nil and safeCall(player, "isEquipped", item) == true then return true end
-    if player ~= nil and safeCall(player, "isHandItem", item) == true then return true end
+    if safeCall(item, "isEquipped") == true then return true end
+    if player ~= nil then
+        if safeCall(player, "isEquipped", item) == true then return true end
+        if safeCall(player, "isHandItem", item) == true then return true end
+        if safeCall(player, "getPrimaryHandItem") == item or safeCall(player, "getSecondaryHandItem") == item then
+            return true
+        end
+        if safeCall(player, "isAttachedItem", item) == true then return true end
+    end
+    local attachedSlot = tonumber(safeCall(item, "getAttachedSlot"))
+    if attachedSlot ~= nil and attachedSlot >= 0 then return true end
+    -- Never automatically spend containers, keys/keyrings, radios, weapons, clothing, or writing utensils.
+    if safeCall(item, "isKeyRing") == true then return true end
+    if safeCall(item, "getInventory") ~= nil then return true end
+    if safeCall(item, "getDeviceData") ~= nil then return true end
+    if (tonumber(safeCall(item, "getCurrentAmmoCount")) or 0) > 0 or safeCall(item, "isRoundChambered") == true then
+        return true
+    end
+    if isItemClass(item, "Key") or isItemClass(item, "KeyRing") or isItemClass(item, "Radio")
+            or isItemClass(item, "HandWeapon") or isItemClass(item, "Clothing") or isItemClass(item, "InventoryContainer") then
+        return true
+    end
+    local ft = tostring(safeCall(item, "getFullType") or "")
+    local st = tostring(safeCall(item, "getType") or "")
+    if R.WRITING_TYPES[ft] or R.WRITING_TYPES[st] then return true end
+    if string.find(ft, "KeyRing", 1, true) or string.find(ft, "WalkieTalkie", 1, true)
+            or string.find(ft, "HamRadio", 1, true) then
+        return true
+    end
     return false
+end
+
+local function isAutoSpendEligible(item, ft)
+    if ft == "Base.Money" or ft == "Base.MoneyBundle" then return true end
+    if R.SAFE_BARTER_TYPES[ft] == true then return true end
+    local dcat = tostring(safeCall(item, "getDisplayCategory") or "")
+    if R.SAFE_BARTER_CATEGORIES[dcat] == true then return true end
+    return false
+end
+
+function R.isProtectedForDrop(player, item)
+    return isProtectedItem(player, item)
 end
 
 function R.countPlayerCredit(player)
@@ -286,19 +364,25 @@ function R.countPlayerCredit(player)
     for i = 0, items:size() - 1 do
         local item = items:get(i)
         if not isProtectedItem(player, item) then
-            local ft = safeCall(item, "getFullType") or ""
-            local val = ft == "Base.Money" and 10 or (A.Trade and A.Trade.valueOf(ft) or 0)
-            if val > 0 then
-                total = total + val
-                usable[#usable + 1] = { item = item, fullType = ft, value = val }
+            local ft = tostring(safeCall(item, "getFullType") or "")
+            if isAutoSpendEligible(item, ft) then
+                local val
+                if ft == "Base.Money" then val = 10
+                elseif ft == "Base.MoneyBundle" then val = 1000
+                else val = A.Trade and A.Trade.valueOf(ft) or 0 end
+                if val > 0 then
+                    total = total + val
+                    usable[#usable + 1] = { item = item, fullType = ft, value = val }
+                end
             end
         end
     end
     table.sort(usable, function(a, b)
-        local am = a.fullType == "Base.Money" and 0 or 1
-        local bm = b.fullType == "Base.Money" and 0 or 1
+        local am = (a.fullType == "Base.Money" or a.fullType == "Base.MoneyBundle") and 0 or 1
+        local bm = (b.fullType == "Base.Money" or b.fullType == "Base.MoneyBundle") and 0 or 1
         if am ~= bm then return am < bm end
-        return a.value < b.value
+        if a.value ~= b.value then return a.value < b.value end
+        return tostring(a.fullType) < tostring(b.fullType)
     end)
     return total, usable
 end
@@ -311,15 +395,26 @@ function R.spendPlayerCredit(player, requiredCredit)
     local inv = safeCall(player, "getInventory")
     if inv == nil then return false, "no_inventory" end
     local paid = 0
-    for _, entry in ipairs(usable) do
-        if paid >= requiredCredit then break end
-        paid = paid + entry.value
-        pcall(function()
+    local removed = {}
+    local ok, err = pcall(function()
+        for _, entry in ipairs(usable) do
+            if paid >= requiredCredit then break end
             inv:Remove(entry.item)
-            if type(sendRemoveItemFromContainer) == "function" and A.side() == "server" then
-                sendRemoveItemFromContainer(inv, entry.item)
-            end
-        end)
+            removed[#removed + 1] = entry
+            paid = paid + entry.value
+        end
+    end)
+    if not ok then
+        for _, entry in ipairs(removed) do
+            pcall(function() inv:AddItem(entry.item) end)
+        end
+        A.fail("radio spend credit rolled back", err)
+        return false, "spend_failed"
+    end
+    if type(sendRemoveItemFromContainer) == "function" and A.side() == "server" then
+        for _, entry in ipairs(removed) do
+            pcall(sendRemoveItemFromContainer, inv, entry.item)
+        end
     end
     return true, paid
 end

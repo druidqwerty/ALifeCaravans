@@ -8,7 +8,19 @@ Faction caravans for [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sh
 
 Free and open source. The code is developed with AI; direction, testing and time are mine. [Support the mods on Boosty](https://boosty.to/lrgpp).
 
-> **0.8.1 — Added Simplified & Traditional Chinese localization (`CN` / `CH`) across all convoy NPC dialogue, contact/trade/radio UI, Sandbox settings, and personal Mod Options (on top of the 0.8.0 Project A-Life 1.5.1 compatibility & 101.6 MHz Radio Dispatch release).** See [0.8.0 verification and limits](TEST_0.8.0.md).
+> **0.8.2 — Full compatibility with Project Zomboid 42.22.2 & Project A-Life 1.5.3, plus a critical fix protecting player weapons, tools, radios, keyrings, and hotbar gear during Supply Drop orders (`@PriestSmokey`), real B42 `FluidContainer` refueling, and 11 updated B42.22.2 item/vehicle IDs.**
+
+## New in 0.8.2
+
+- **Critical Supply Drop & Barter item protection (`09_ALC_Radio.lua`, `05_ALC_Trade.lua`):**
+  - Fixed a bug reported by `@PriestSmokey` where ordering a Roadside Supply Drop could consume equipped/hotbar weapons, knives, handheld radios, or keyrings as barter credit.
+  - Hotbar/attached items (`isAttachedItem` / `getAttachedSlot >= 0`), hand items, keys/keyrings, containers, radios, weapons, loaded firearms, clothing, writing utensils, favorites, and equipped gear are now strictly protected. Automatic supply-drop credit spending only consumes cash (`Base.Money`, `Base.MoneyBundle`) and safe unprotected food/medical/consumable barter commodities.
+  - Fixed `inspectDevice` so dead-battery walkie-talkies (`power <= 0.001`) are properly rejected.
+- **Project Zomboid 42.22.2 & Project A-Life 1.5.3 compatibility (`03_ALC_Roads.lua`, `ALC_Spawn.lua`, `04_ALC_Convoy.lua`, `06_ALC_Physics.lua`, `02_ALC_Vehicles.lua`, `ALC_Cargo.lua`):**
+  - Integrated with Project A-Life 1.5.2/1.5.3 modules (`CarSweep`, `CarOffline`, `CarWatchdog`, `CarBrain`, `DrivingBoarding.seatResult`, `DrivingLifecycle.carseatRelease`, `DrivingBrakeRelease`, `HeliModels`) and resolved the `cars8_site_rim` / `Cars9.streetSite` / `VehicleArrivals.minSiteTiles` spawn deadlock on highways.
+  - Replaced 11 removed/renamed Build 42.22.2 item and vehicle IDs (`Base.WaterBottle`, `Base.WaterRationCan`, `Base.WalkieTalkie4`, `Base.CigarettePack`, `Base.Coffee2`, `Base.Flour2`, `Base.Bullets357Box`, `Base.PotatoBagSeed2`, `Base.CabbageBagSeed2`, `Base.VanAmbulance`) and updated roadside refuel/repair (`ALC_Cargo.assistRepair`) to drain B42 `FluidContainer` gas cans cleanly.
+- **Additional fixes (`00_ALC_Core.lua`, `ALC_RadioServer.lua`, `ALC_Director.lua`, `ALC_Interact.lua`, `ALC_Client.lua`, `ALC_RadioWindow.lua`):**
+  - Fixed `NightTravelPenalty` Sandbox normalization (`/ 100`), atomic `claimSupplyDrop` inventory delivery check, localized SOS `distressTick` radio broadcasts, `threaten` extortion item delivery, `Claim Supply Drop` context menu visibility alongside convoys, F9 hotkey pause/menu/chat focus guard, and `ALCRadioWindow:prerender()` 500 ms scan cache.
 
 ## New in 0.8.1
 
@@ -101,7 +113,7 @@ Save/reload recovery also preserves a seated player instead of deadlocking the c
 
 ## Requirements and installation
 
-- **Project Zomboid Build 42.21** and **Project A-Life 1.5.1** are the verified target for 0.8.0. Keep A-Life Driving enabled. Later dependency/game versions require their own verification.
+- **Project Zomboid Build 42.22.2** and **Project A-Life 1.5.3** are the verified target for 0.8.2. Keep A-Life Driving enabled. Later dependency/game versions require their own verification.
 - [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sharedfiles/filedetails/?id=3803984183).
 - [A-Life: Factions Expanded](https://steamcommunity.com/sharedfiles/filedetails/?id=3813871509) is optional, but recommended for the full experience.
 - [Project A-Life – Jeem Extension](https://steamcommunity.com/sharedfiles/filedetails/?id=3806944055) is optional, but recommended for the full experience; its public palette integrates with the new windows.
@@ -124,7 +136,7 @@ Right-click within about 18 tiles of a caravan to interact. Trade and ride reque
 
 [0.8.0 current-source report](TEST_0.8.0.md). Earlier verification remains in [0.7.2](TEST_0.7.2.md), [0.7.1](TEST_0.7.1.md), [0.6.3](TEST_0.6.3.md), [0.6.2](TEST_0.6.2.md), [0.6.1](TEST_0.6.1.md), two-client MP evidence in [0.6.0](TEST_0.6.0.md), and passenger save/reload and driver replacement evidence in [0.5.0](TEST_0.5.0.md).
 
-Developer checks: `python tools/run_test.py` (496 assertions) and `python tools/pz_loadcheck.py`.
+Developer checks: `python tools/run_test.py` (517 assertions) and `python tools/pz_loadcheck.py`.
 
 ## Current limits
 

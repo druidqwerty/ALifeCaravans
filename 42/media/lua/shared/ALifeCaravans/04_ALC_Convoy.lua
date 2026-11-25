@@ -601,14 +601,14 @@ function C.installHooks()
     end
     if type(p.DrivingRoute) == "table" and type(p.DrivingRoute.scene) == "function" then
         A.wrap(p.DrivingRoute, "scene", function(original)
-            return function(v, tuning)
+            return function(v, tuning, ...)
                 local isCaravan, id, entry = C.isCaravanVehicle(v)
-                if not isCaravan then return original(v, tuning) end
+                if not isCaravan then return original(v, tuning, ...) end
                 if type(p.DrivingRoute.dimensions) == "function" and type(getCell) == "function" then
                     local ok, fast = pcall(C.fastScene, v, tuning, id, entry)
                     if ok and type(fast) == "table" then return fast end
                 end
-                local scene = original(v, tuning)
+                local scene = original(v, tuning, ...)
                 if type(scene) ~= "table" or type(scene.bodies) ~= "table" then return scene end
                 local convoyPositions = {}
                 local caravanId = entry and entry.caravanId or A.vehicleTag(v)
@@ -810,6 +810,61 @@ function C.installHooks()
                 return res
             end
         end, "DrivingBoarding.seat")
+    end
+    -- Project A-Life 1.5.3 (cars9_seat_quiet) seats boarding members via seatResult instead of seat.
+    if type(p.DrivingBoarding) == "table" and type(p.DrivingBoarding.seatResult) == "function" then
+        A.wrap(p.DrivingBoarding, "seatResult", function(original)
+            return function(member, ...)
+                local okSeat, why = original(member, ...)
+                if type(member) == "table" and A.Physics then
+                    if member.npc ~= nil and type(A.Physics.syncBodyCrashGuard) == "function" then
+                        pcall(A.Physics.syncBodyCrashGuard, member.npc, member.vehicle, true)
+                    end
+                    if member.vehicle ~= nil and type(A.Physics.syncVehicleOccupants) == "function" then
+                        pcall(A.Physics.syncVehicleOccupants, member.vehicle, true)
+                    end
+                end
+                return okSeat, why
+            end
+        end, "DrivingBoarding.seatResult")
+    end
+    -- Project A-Life 1.5.3 CarWatchdog & CarGuard (idleAction / stallMs=5s) would resume
+    -- or dismount deliberately halted caravan vehicles after 5s; Caravans manages its own halts.
+    if type(p.CarWatchdog) == "table" and type(p.CarWatchdog.idle) == "function" then
+        A.wrap(p.CarWatchdog, "idle", function(original)
+            return function(client, s, now, ...)
+                if type(s) == "table" and C.isCaravanVehicle(s.vehicle) then
+                    return
+                end
+                return original(client, s, now, ...)
+            end
+        end, "CarWatchdog.idle")
+    end
+    -- Project A-Life 1.5.3 CarBrain autonomously exits/boards/abandons NPC vehicles; skip caravan cars
+    -- so ALC_Threats, ALC_Crew, and ALC_Director remain the single authority for convoy crews.
+    if type(p.CarBrain) == "table" and type(p.CarBrain.watch) == "function" then
+        A.wrap(p.CarBrain, "watch", function(original)
+            return function(owner, s, now, ...)
+                if type(s) == "table" and C.isCaravanVehicle(s.vehicle) then
+                    return false
+                end
+                return original(owner, s, now, ...)
+            end
+        end, "CarBrain.watch")
+    end
+    if type(p.CarBrain) == "table" and type(p.CarBrain.apply) == "function" then
+        A.wrap(p.CarBrain, "apply", function(original)
+            return function(owner, id, action, why, row, now, ...)
+                if id ~= nil then
+                    if C.known[id] ~= nil then return false end
+                    if type(getVehicleById) == "function" then
+                        local car = getVehicleById(id)
+                        if car ~= nil and C.isCaravanVehicle(car) then return false end
+                    end
+                end
+                return original(owner, id, action, why, row, now, ...)
+            end
+        end, "CarBrain.apply")
     end
     if type(p.DrivingDemo) == "table" and type(p.DrivingDemo.seat) == "function" then
         A.wrap(p.DrivingDemo, "seat", function(original)

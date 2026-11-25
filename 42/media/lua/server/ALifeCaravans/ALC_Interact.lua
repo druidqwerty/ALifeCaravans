@@ -424,8 +424,11 @@ function I.command(player, command, args)
             end
             I.say(caravan, "threat_fold", player, vars)
             if gift ~= nil then
-                gift.row.count = gift.row.count - 1
-                I.reply(player, "gift", { vehicleId = vehicleId, item = gift.row.item, name = gift.row.name, count = 1, reason = "threat" })
+                local okGift = T.exchange(player, { giveRows = {}, takeRows = { { item = gift.row.item, count = 1 } } })
+                if okGift then
+                    gift.row.count = gift.row.count - 1
+                    I.reply(player, "gift", { vehicleId = vehicleId, item = gift.row.item, name = gift.row.name, count = 1, reason = "threat", delivered = true })
+                end
             end
             I.flee(caravan, player, nil)
         end

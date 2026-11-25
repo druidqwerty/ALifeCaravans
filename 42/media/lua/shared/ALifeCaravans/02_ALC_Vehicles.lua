@@ -14,6 +14,7 @@ A.Vehicles = V
 V.badPatterns = {
     "Burnt", "Smashed", "Trailer", "Wreck", "Destroyed", "Crashed", "Rusty", "Junk", "Broken",
     "Bulldozer", "Dozer", "Excavator", "Crane", "Forklift", "Loader", "Backhoe", "Steamroller", "Combine", "Harvester", "Tractor",
+    "Heli", "Helicopter", "Chopper", "Aircraft", "Plane", "Boat", "Yacht",
 }
 
 V.heavyArmorPatterns = {
@@ -42,7 +43,7 @@ V.classes = {
     rescue = {
         zones = { "ambulance", "fire" },
         patterns = { "Ambulance", "Fire", "Rescue", "Medical", "EMS", "Paramedic" },
-        fallback = { "Base.Ambulance", "Base.PickUpVanLightsFire", "Base.Van" },
+        fallback = { "Base.VanAmbulance", "Base.PickUpVanLightsFire", "Base.Van" },
     },
     trade = {
         zones = { "delivery", "trades", "business", "postal", "farm", "transit", "knoxdisti" },
@@ -76,6 +77,11 @@ local function numberOf(script, method, default)
 end
 
 local function badName(name)
+    local heli = ProjectALife and ProjectALife.HeliModels
+    if type(heli) == "table" and type(heli.isHeliScript) == "function" then
+        local ok, isHeli = pcall(heli.isHeliScript, name)
+        if ok and isHeli == true then return true end
+    end
     for _, pattern in ipairs(V.badPatterns) do
         if string.find(name, pattern, 1, true) then return true end
     end

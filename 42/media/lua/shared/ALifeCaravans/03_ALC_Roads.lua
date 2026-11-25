@@ -56,10 +56,24 @@ function R.isRoad(scene, x, y)
     local S = sites()
     if S ~= nil and type(S.road) == "function" then
         local ok, road = pcall(S.road, scene, x, y)
-        if ok then return road == true end
+        if ok and road == true then return true end
     end
     local roads = ProjectALife and ProjectALife.Road
-    if roads == nil or type(roads.isPavedSurface) ~= "function" or type(getCell) ~= "function" then return false end
+    local route = ProjectALife and ProjectALife.DrivingRoute
+    if roads == nil or type(getCell) ~= "function" then return false end
+    -- Project A-Life 1.5.3 Sites.road (Cars9.streetSite) rejects any tile inside a
+    -- VehicleZone (including TrafficJam/shoulder zones on real Nav highways). Fall back
+    -- to unobstructed outside paved Nav road squares so highways remain drivable.
+    if route ~= nil and type(route.square) == "function" and type(roads.isRoadSquare) == "function" then
+        local ok, paved = pcall(function()
+            local t = route.square(scene, x, y)
+            return t ~= nil and t.sq ~= nil and not t.reason and not t.roadside
+                and t.sq:isOutside() and roads.isRoadSquare(t.sq)
+        end)
+        if ok and paved == true then return true end
+    end
+    if S ~= nil and type(S.road) == "function" then return false end
+    if type(roads.isPavedSurface) ~= "function" then return false end
     local ok, paved = pcall(function()
         local square = getCell():getGridSquare(math.floor(x), math.floor(y), 0)
         return square ~= nil and square:isOutside() and roads.isPavedSurface(square)
@@ -71,11 +85,18 @@ function R.link(scene, a, b)
     local S = sites()
     if S ~= nil and type(S.link) == "function" then
         local ok, linked = pcall(S.link, scene, a, b)
-        if ok then return linked == true end
-        return false
+        if ok and linked == true then return true end
     end
+    local route = ProjectALife and ProjectALife.DrivingRoute
+    local prev = (route ~= nil and type(route.square) == "function") and route.square(scene, a.x, a.y) or nil
     for i = 1, 4 do
-        if not R.isRoad(scene, a.x + (b.x - a.x) * i / 4, a.y + (b.y - a.y) * i / 4) then return false end
+        local px, py = a.x + (b.x - a.x) * i / 4, a.y + (b.y - a.y) * i / 4
+        if not R.isRoad(scene, px, py) then return false end
+        if prev ~= nil and type(route.edge) == "function" then
+            local cur = route.square(scene, px, py)
+            if cur == nil or route.edge(scene, prev, cur) then return false end
+            prev = cur
+        end
     end
     return true
 end
@@ -86,6 +107,38 @@ function R.space(scene, x, y, spawn)
         local ok, free = pcall(S.space, scene, x, y, spawn)
         if ok then return free == true end
         return false
+    end
+    return true
+end
+
+-- Relaxed spawn clearance for Project A-Life 1.5.3 cars8_site_rim:
+-- A-Life 1.5.3 Sites.space enforces edge >= 20 (edgeRespawn), which deadlocks with
+-- MinSpawnDistance=40 inside PZ B42's ~52-tile loaded chunk window. Caravans spawns
+-- with playerKeepOut=0 (exempt from SpawnPolicy window_rim) and only needs >= 8 tiles
+-- of loaded margin (above A-Life's edgeFloor=8) plus physical vehicle/footprint clearance.
+function R.spaceRelaxed(scene, x, y, players, minPlayer)
+    local margin = 8
+    if not (R.isLoaded(x + margin, y) and R.isLoaded(x - margin, y)
+            and R.isLoaded(x, y + margin) and R.isLoaded(x, y - margin)) then
+        return false
+    end
+    if type(scene) == "table" then
+        for _, body in ipairs(scene.bodies or {}) do
+            local r = tonumber(body.radius) or 4
+            if (x - body.x) ^ 2 + (y - body.y) ^ 2 < r * r then return false end
+        end
+        for _, body in ipairs(scene.reserved or {}) do
+            if (x - body.x) ^ 2 + (y - body.y) ^ 2 < 100 then return false end
+        end
+        for _, s in ipairs(scene.skip or {}) do
+            if (x - s.x) ^ 2 + (y - s.y) ^ 2 < 400 then return false end
+        end
+    end
+    if not R.farFromPlayers(players, x, y, tonumber(minPlayer) or 0) then return false end
+    local route = ProjectALife and ProjectALife.DrivingRoute
+    if route ~= nil and type(route.openFootprint) == "function" then
+        local ok, open = pcall(route.openFootprint, scene, x, y, 1, 0, 3, 3)
+        if not ok or open ~= true then return false end
     end
     return true
 end
@@ -148,6 +201,16 @@ function R.siteNear(scene, x, y, players, options)
         checked = checked + 1
         if checked > maxChecks then break end
         if R.space(scene, candidate.x, candidate.y, true) then
+            return { x = candidate.x, y = candidate.y, z = 0 }
+        end
+    end
+    -- Pass 2: if A-Life 1.5.3 Sites.rimClear rejected every candidate near the loaded window
+    -- edge, allow physically clear Nav road tiles with >= 8 tiles loaded margin.
+    checked = 0
+    for _, candidate in ipairs(candidates) do
+        checked = checked + 1
+        if checked > maxChecks then break end
+        if R.spaceRelaxed(scene, candidate.x, candidate.y, players, minPlayer) then
             return { x = candidate.x, y = candidate.y, z = 0 }
         end
     end
@@ -357,7 +420,9 @@ function R.behind(scene, site, firstPoint, gap, players, minPlayer)
     dx, dy = dx / length, dy / length
     for distance = gap, gap + 8, 2 do
         local x, y = tile(site.x - dx * distance), tile(site.y - dy * distance)
-        if R.isRoad(scene, x, y) and R.space(scene, x, y, true) and R.farFromPlayers(players, x, y, minPlayer or 0)
+        if R.isRoad(scene, x, y)
+                and (R.space(scene, x, y, true) or R.spaceRelaxed(scene, x, y, players, minPlayer or 0))
+                and R.farFromPlayers(players, x, y, minPlayer or 0)
                 and R.link(scene, { x = x, y = y }, { x = site.x, y = site.y }) then
             return { x = x, y = y, z = 0 }
         end

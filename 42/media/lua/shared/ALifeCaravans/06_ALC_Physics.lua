@@ -266,6 +266,10 @@ end
 
 function F.releaseBrake(v, ridersAllowed)
     if not v or isServer() or not v:isLocalPhysicSim() then return false, "not_local" end
+    local br = ProjectALife and ProjectALife.DrivingBrakeRelease
+    if type(br) == "table" and type(br.active) == "table" and br.active[v] ~= nil then
+        return false, "brake_release_active"
+    end
     if isClient() then
         local player = getSpecificPlayer(0)
         if not player or v:getNetPlayerId() ~= player:getOnlineID() then return false, "not_owner" end
@@ -363,7 +367,7 @@ function F.prepare(s, entry)
     if not s or not entry or isServer() then return false end
     if not isClient() then F.ensureSP(s, entry) end
     if s.phase == "approach" and s.boardPrepared and not s.boarded and not s.releaseAt
-            and s.vehicle and s.vehicle:getDriver() == nil then
+            and not s.brakeRelease and s.vehicle and s.vehicle:getDriver() == nil then
         s.boardPrepared = nil
     end
     local v, npc = s.vehicle, s.npc

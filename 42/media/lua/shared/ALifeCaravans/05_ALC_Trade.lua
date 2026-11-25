@@ -13,59 +13,62 @@ local T = { currency = "Base.Money", maxStock = 8, maxCount = 6 }
 A.Trade = T
 
 -- Explicit values (cash units) for the goods caravans carry and common barter.
+-- Primary entries use PZ B42.22+ script IDs; legacy/modded IDs kept for cross-mod compatibility.
 T.values = {
-    ["Base.Money"] = 1, ["Base.Cigarettes"] = 12, ["Base.TinnedBeans"] = 15, ["Base.CannedCornedBeef"] = 18,
-    ["Base.CannedTomato"] = 12, ["Base.CannedChili"] = 15, ["Base.CannedBolognese"] = 15, ["Base.CannedSardines"] = 14,
-    ["Base.WaterBottleFull"] = 8, ["Base.WaterBottle"] = 3, ["Base.Bandage"] = 10, ["Base.Antibiotics"] = 60,
+    ["Base.Money"] = 1, ["Base.MoneyBundle"] = 100,
+    ["Base.CigarettePack"] = 12, ["Base.CigaretteSingle"] = 1, ["Base.CigaretteCarton"] = 110, ["Base.Cigarettes"] = 12,
+    ["Base.TinnedBeans"] = 15, ["Base.CannedCornedBeef"] = 18, ["Base.CannedTomato"] = 12, ["Base.CannedChili"] = 15,
+    ["Base.CannedBolognese"] = 15, ["Base.CannedSardines"] = 14, ["Base.WaterRationCan"] = 18, ["Base.BeefJerky"] = 14,
+    ["Base.WaterBottle"] = 8, ["Base.Bandage"] = 10, ["Base.Antibiotics"] = 60,
     ["Base.Pills"] = 20, ["Base.PillsAntiDep"] = 25, ["Base.Disinfectant"] = 25, ["Base.FirstAidKit"] = 80,
-    ["Base.SutureNeedle"] = 30, ["Base.Splint"] = 15, ["Base.PetrolCan"] = 45, ["Base.EmptyPetrolCan"] = 8,
+    ["Base.SutureNeedle"] = 30, ["Base.Splint"] = 15, ["Base.PetrolCan"] = 45,
     ["Base.Bullets9mmBox"] = 50, ["Base.Bullets45Box"] = 50, ["Base.Bullets38Box"] = 45, ["Base.Bullets44Box"] = 55,
-    ["Base.ShotgunShellsBox"] = 55, ["Base.556Box"] = 70, ["Base.308Box"] = 70, ["Base.223Box"] = 65,
-    ["Base.Axe"] = 70, ["Base.Hammer"] = 25, ["Base.Nails"] = 10, ["Base.Rope"] = 20, ["Base.Saw"] = 30,
+    ["Base.Bullets357Box"] = 60, ["Base.ShotgunShellsBox"] = 55, ["Base.556Box"] = 70, ["Base.308Box"] = 70,
+    ["Base.Axe"] = 70, ["Base.Hammer"] = 25, ["Base.Nails"] = 10, ["Base.NailsBox"] = 40, ["Base.Rope"] = 20, ["Base.Saw"] = 30,
     ["Base.Crowbar"] = 45, ["Base.Screwdriver"] = 15, ["Base.Wrench"] = 20, ["Base.DuctTape"] = 15,
-    ["Base.Seeds_PotatoBag"] = 18, ["Base.Seeds_CabbageBag"] = 15, ["Base.MRE"] = 20, ["Base.CannedFruitCocktail"] = 12,
-    ["Base.Battery"] = 12, ["Base.Torch"] = 25, ["Base.Radio.WalkieTalkie4"] = 90, ["Base.Generator"] = 250,
+    ["Base.PotatoBagSeed2"] = 18, ["Base.CabbageBagSeed2"] = 15, ["Base.CannedFruitCocktail"] = 12,
+    ["Base.Battery"] = 12, ["Base.Torch"] = 25, ["Base.WalkieTalkie4"] = 90, ["Base.Generator"] = 250,
     ["Base.Vest_BulletArmy"] = 150, ["Base.Hat_Army"] = 25, ["Base.Whiskey"] = 30, ["Base.Wine"] = 18,
-    ["Base.Coffee"] = 20, ["Base.Sugar"] = 10, ["Base.Rice"] = 12, ["Base.Pasta"] = 10, ["Base.Flour"] = 10,
+    ["Base.Coffee2"] = 20, ["Base.Sugar"] = 10, ["Base.Rice"] = 12, ["Base.Pasta"] = 10, ["Base.Flour2"] = 10,
     ["Base.Pistol"] = 120, ["Base.Shotgun"] = 160, ["Base.HuntingRifle"] = 180, ["Base.BaseballBat"] = 30,
     ["Base.Machete"] = 80, ["Base.HuntingKnife"] = 35, ["Base.Sheet"] = 5, ["Base.Soap2"] = 6, ["Base.Lighter"] = 8,
 }
 
 -- Fallback values by the game's display/type category.
 T.categoryValues = {
-    Ammo = 25, Weapon = 60, Food = 10, FirstAid = 20, Medical = 20, Tool = 25, Fuel = 45, Material = 8,
+    Ammo = 25, Weapon = 60, Food = 10, Water = 8, FirstAid = 20, Medical = 20, Tool = 25, Fuel = 45, Material = 8,
     Clothing = 10, Literature = 5, Electronics = 20, Container = 30, Bag = 30, Junk = 2, Household = 6,
     Camping = 20, Cooking = 8, Furniture = 10, Gardening = 12, Instrument = 40, Entertainment = 5,
     Communications = 60, Light = 15, Accessory = 10, Memento = 3, Sport = 8,
 }
-T.untradable = { Key = true, Corpse = true, Animal = true, Fishing = false }
+T.untradable = { Key = true, KeyRing = true, Corpse = true, Animal = true, Fishing = false }
 
 -- Goods per caravan kind: { item, count range }. Missing items are skipped.
 T.stock = {
     trade = {
         { "Base.TinnedBeans", 2, 4 }, { "Base.CannedCornedBeef", 1, 3 }, { "Base.CannedTomato", 1, 3 }, { "Base.CannedChili", 1, 2 },
-        { "Base.WaterBottleFull", 2, 4 }, { "Base.Bandage", 2, 4 }, { "Base.Antibiotics", 1, 1 }, { "Base.Pills", 1, 2 },
-        { "Base.PetrolCan", 1, 2 }, { "Base.Bullets9mmBox", 1, 2 }, { "Base.ShotgunShellsBox", 1, 1 }, { "Base.Cigarettes", 2, 4 },
+        { "Base.WaterBottle", 2, 4 }, { "Base.Bandage", 2, 4 }, { "Base.Antibiotics", 1, 1 }, { "Base.Pills", 1, 2 },
+        { "Base.PetrolCan", 1, 2 }, { "Base.Bullets9mmBox", 1, 2 }, { "Base.ShotgunShellsBox", 1, 1 }, { "Base.CigarettePack", 2, 4 },
         { "Base.Axe", 1, 1 }, { "Base.Hammer", 1, 1 }, { "Base.Nails", 1, 2 }, { "Base.Rope", 1, 2 }, { "Base.Saw", 1, 1 },
-        { "Base.Seeds_PotatoBag", 1, 1 }, { "Base.Coffee", 1, 1 }, { "Base.Rice", 1, 2 }, { "Base.Battery", 1, 3 },
+        { "Base.PotatoBagSeed2", 1, 1 }, { "Base.Coffee2", 1, 1 }, { "Base.Rice", 1, 2 }, { "Base.Battery", 1, 3 },
         { "Base.Torch", 1, 1 }, { "Base.Whiskey", 1, 1 }, { "Base.DuctTape", 1, 1 },
     },
     convoy = {
         { "Base.556Box", 1, 2 }, { "Base.Bullets9mmBox", 1, 2 }, { "Base.308Box", 1, 1 }, { "Base.FirstAidKit", 1, 1 },
-        { "Base.Bandage", 2, 4 }, { "Base.MRE", 2, 4 }, { "Base.WaterBottleFull", 2, 3 }, { "Base.PetrolCan", 1, 1 },
-        { "Base.Hat_Army", 1, 1 }, { "Base.Radio.WalkieTalkie4", 1, 1 }, { "Base.Antibiotics", 1, 1 },
+        { "Base.Bandage", 2, 4 }, { "Base.WaterRationCan", 2, 4 }, { "Base.BeefJerky", 2, 4 }, { "Base.WaterBottle", 2, 3 }, { "Base.PetrolCan", 1, 1 },
+        { "Base.Hat_Army", 1, 1 }, { "Base.WalkieTalkie4", 1, 1 }, { "Base.Antibiotics", 1, 1 },
     },
     patrol = {
-        { "Base.Bullets9mmBox", 1, 2 }, { "Base.ShotgunShellsBox", 1, 1 }, { "Base.Bandage", 1, 2 }, { "Base.WaterBottleFull", 1, 2 },
-        { "Base.Cigarettes", 1, 2 }, { "Base.Coffee", 1, 1 }, { "Base.Torch", 1, 1 }, { "Base.Battery", 1, 2 },
+        { "Base.Bullets9mmBox", 1, 2 }, { "Base.ShotgunShellsBox", 1, 1 }, { "Base.Bandage", 1, 2 }, { "Base.WaterBottle", 1, 2 },
+        { "Base.CigarettePack", 1, 2 }, { "Base.Coffee2", 1, 1 }, { "Base.Torch", 1, 1 }, { "Base.Battery", 1, 2 },
     },
     rescue = {
         { "Base.Bandage", 3, 6 }, { "Base.FirstAidKit", 1, 1 }, { "Base.Pills", 1, 3 }, { "Base.Antibiotics", 1, 2 },
-        { "Base.WaterBottleFull", 2, 3 }, { "Base.Disinfectant", 1, 2 }, { "Base.SutureNeedle", 1, 1 }, { "Base.Splint", 1, 2 },
+        { "Base.WaterBottle", 2, 3 }, { "Base.Disinfectant", 1, 2 }, { "Base.SutureNeedle", 1, 1 }, { "Base.Splint", 1, 2 },
         { "Base.PillsAntiDep", 1, 1 },
     },
     raid = {
-        { "Base.Cigarettes", 2, 4 }, { "Base.Whiskey", 1, 2 }, { "Base.Pistol", 1, 1 }, { "Base.Bullets9mmBox", 1, 2 },
+        { "Base.CigarettePack", 2, 4 }, { "Base.Whiskey", 1, 2 }, { "Base.Pistol", 1, 1 }, { "Base.Bullets9mmBox", 1, 2 },
         { "Base.Machete", 1, 1 }, { "Base.PetrolCan", 1, 1 }, { "Base.Generator", 1, 1 }, { "Base.Vest_BulletArmy", 1, 1 },
         { "Base.CannedCornedBeef", 1, 2 }, { "Base.Crowbar", 1, 1 },
     },
@@ -261,8 +264,46 @@ function T.commit(stock, quote)
     end
 end
 
+local function isClass(item, className)
+    if item == nil or type(instanceof) ~= "function" then return false end
+    local ok, hit = pcall(instanceof, item, className)
+    return ok and hit == true
+end
+
+function T.isProtectedItem(player, item)
+    if item == nil then return true end
+    if read(item, "isFavorite") == true then return true end
+    if read(item, "isEquipped") == true then return true end
+    if player ~= nil then
+        if type(player.isEquipped) == "function" then
+            local ok, eq = pcall(player.isEquipped, player, item)
+            if ok and eq == true then return true end
+        end
+        if type(player.isHandItem) == "function" then
+            local ok, hand = pcall(player.isHandItem, player, item)
+            if ok and hand == true then return true end
+        end
+        if read(player, "getPrimaryHandItem") == item or read(player, "getSecondaryHandItem") == item then
+            return true
+        end
+        if type(player.isAttachedItem) == "function" then
+            local ok, att = pcall(player.isAttachedItem, player, item)
+            if ok and att == true then return true end
+        end
+    end
+    local slot = tonumber(read(item, "getAttachedSlot"))
+    if slot ~= nil and slot >= 0 then return true end
+    if read(item, "isKeyRing") == true or isClass(item, "KeyRing") or isClass(item, "Key") then return true end
+    local ft = tostring(read(item, "getFullType") or "")
+    if string.find(ft, "KeyRing", 1, true) then return true end
+    local cat = tostring(read(item, "getCategory") or "")
+    local dcat = tostring(read(item, "getDisplayCategory") or "")
+    if T.untradable[cat] or T.untradable[dcat] then return true end
+    return false
+end
+
 -- The same eligible items populate the UI and satisfy server payment. Never
--- sell equipped/favourite items or a bag with its contents still inside it.
+-- sell equipped/attached/favourite/key items or a bag with its contents still inside it.
 function T.inventoryItems(player)
     local result, visited = {}, {}
     local function scan(container, depth)
@@ -273,11 +314,10 @@ function T.inventoryItems(player)
             local item = items:get(index)
             local child = read(item, "getInventory")
             local favorite = read(item, "isFavorite") == true
-            local equipped = false
-            if type(player.isEquipped) == "function" then equipped = player:isEquipped(item) == true end
+            local protected = T.isProtectedItem(player, item)
             local empty = child == nil or child:getItems():size() == 0
             local loaded = (tonumber(read(item, "getCurrentAmmoCount")) or 0) > 0 or read(item, "isRoundChambered") == true
-            if not favorite and not equipped and empty and not loaded then
+            if not protected and empty and not loaded then
                 result[#result + 1] = { item = item, container = container, type = item:getFullType() }
             end
             if not favorite then scan(child, depth + 1) end

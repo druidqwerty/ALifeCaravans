@@ -112,10 +112,12 @@ if Win then
     end
 
     function Win:onTune()
+        self.cachedStatusAtMs = 0
         A.Client.send("radio_tune", { freq = R.frequency() }, self.playerNum)
     end
 
     function Win:onPrimary()
+        self.cachedStatusAtMs = 0
         local row = self:selectedRow()
         if self.activeTab == "airwaves" then
             A.Client.send("radio_hail_caravan", {}, self.playerNum)
@@ -153,6 +155,7 @@ if Win then
     end
 
     function Win:refresh()
+        self.cachedStatusAtMs = 0
         if not self.list then return end
         self.list:clear()
         local cl = A.Client
@@ -269,10 +272,17 @@ if Win then
         U.panel(self, 12, 26, self.width - 24, 72, c)
         self:drawRect(12, 26, 3, 72, 1, c.accent[1], c.accent[2], c.accent[3])
 
-        local p = player0(self.playerNum)
-        local scan = R.scanPlayerRadios(p)
-        local credit = R.countPlayerCredit(p)
-        local canWrite = R.canWriteOnMap(p)
+        local now = A.now()
+        if self.cachedScan == nil or now - (self.cachedStatusAtMs or 0) >= 500 then
+            local p = player0(self.playerNum)
+            self.cachedScan = R.scanPlayerRadios(p)
+            self.cachedCredit = R.countPlayerCredit(p)
+            self.cachedCanWrite = R.canWriteOnMap(p)
+            self.cachedStatusAtMs = now
+        end
+        local scan = self.cachedScan
+        local credit = self.cachedCredit or 0
+        local canWrite = self.cachedCanWrite == true
 
         U.text(self, L.ui("rheader_top", "CARAVAN RADIO NET & SUPPLY DISPATCH"), 22, 32, c.accent, UIFont.Small)
         local rLine = (scan.best and scan.hasPowered)

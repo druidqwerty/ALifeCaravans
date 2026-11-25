@@ -1105,11 +1105,36 @@ function D.eventCaravanTick(now, players)
     for id, node in pairs(G.nodes) do if node.kind == nil or node.kind == "town" then towns[#towns + 1] = id end end
     table.sort(towns)
     if #towns < 2 then return end
-    local destination = towns[A.rand(#towns) + 1]
-    local back = D.planRoute(G, destination, 2 + A.rand(3))
-    if back == nil then return end
-    local route = {}
-    for i = #back, 1, -1 do route[#route + 1] = back[i] end
+    local candidates = {}
+    for _, id in ipairs(towns) do
+        local node = G.nodes[id]
+        local _, d = nearestPlayer(players or {}, node.x, node.y)
+        if #(players or {}) == 0 or (d >= 150 and d <= 900) then candidates[#candidates + 1] = id end
+    end
+    if #candidates == 0 then candidates = towns end
+    for index = #candidates, 2, -1 do
+        local swap = A.rand(index) + 1
+        candidates[index], candidates[swap] = candidates[swap], candidates[index]
+    end
+    local route, bestD = nil, -1
+    for _, destination in ipairs(candidates) do
+        for _ = 1, 4 do
+            local back = D.planRoute(G, destination, 2 + A.rand(3))
+            if back ~= nil then
+                local startNode = G.nodes[back[#back]]
+                local _, d = nearestPlayer(players or {}, startNode.x, startNode.y)
+                if #(players or {}) == 0 then d = math.huge end
+                if d > bestD then
+                    bestD = d
+                    route = {}
+                    for i = #back, 1, -1 do route[#route + 1] = back[i] end
+                end
+            end
+            if bestD >= A.settings.releaseRadius + 60 then break end
+        end
+        if bestD >= A.settings.releaseRadius + 60 then break end
+    end
+    if route == nil or bestD < A.settings.renderRadius then return end
     local kind = (evSpec and evSpec.kind) or KIND_BY_CLASS[class] or "trade"
     local rules = P().FactionSpawnRules
     local hostile = rules ~= nil and type(rules.hostile) == "function" and rules.hostile(faction) == true or false
@@ -1150,10 +1175,10 @@ function D.scavengingTick(caravan, now, players)
     caravan.scavengeNextAtMs = now + (A.settings.scavengingEveryMs or 300000)
     if A.rand(100) >= 30 then return end -- 30% chance
     local lootTables = {
-        { "Base.CannedCornedBeef", "Base.CannedChili", "Base.TinnedBeans", "Base.Cigarettes" },
+        { "Base.CannedCornedBeef", "Base.CannedChili", "Base.TinnedBeans", "Base.CigarettePack" },
         { "Base.Bandage", "Base.Pills", "Base.Disinfectant", "Base.Antibiotics" },
         { "Base.Bullets9mmBox", "Base.ShotgunShellsBox", "Base.556Box" },
-        { "Base.PetrolCan", "Base.EmptyPetrolCan", "Base.Battery" },
+        { "Base.PetrolCan", "Base.DuctTape", "Base.Battery" },
         { "Base.Axe", "Base.Hammer", "Base.Saw", "Base.Crowbar", "Base.Wrench" },
     }
     local loot = lootTables[A.rand(#lootTables) + 1]
@@ -1280,6 +1305,10 @@ function D.mergeTick(now, players)
                         local car=getVehicleById(vid)
                         if car then A.tagVehicle(car,a.id,#a.vehicleIds) end
                     end
+                    a.carCrews = a.carCrews or {}
+                    for carKey, crewList in pairs(b.carCrews or {}) do
+                        a.carCrews[carKey] = crewList
+                    end
                     for _, rowB in ipairs(b.stock or {}) do
                         local found=false
                         for _, rowA in ipairs(a.stock or {}) do
@@ -1289,7 +1318,7 @@ function D.mergeTick(now, players)
                     end
                     -- Detach transfer ownership BEFORE retiring the donor: release
                     -- used to remove all the cars and NPCs just moved into a.
-                    b.actorUids,b.vehicleIds,b.abandoned={},{},{}
+                    b.actorUids,b.vehicleIds,b.abandoned,b.carCrews={},{},{},{}
                     D.retire(b,"merged")
                     -- Receiver's already-arrived cars retain their per-trip
                     -- reports; donor membership is new on each driving client.
@@ -1341,16 +1370,29 @@ function D.distressTick(now, players)
             if caravan.ambush and caravan.ambush.state == "fighting" then
                 if not caravan.distressSent then
                     caravan.distressSent = true
-                    local radio = P() and P().KnoxCountyRadio
-                    if radio and radio.channel then
-                        local text = "MAYDAY MAYDAY: " .. (caravan.callsign or caravan.name) .. " under attack at " .. math.floor(caravan.x) .. "," .. math.floor(caravan.y) .. ". Request immediate assistance."
-                        pcall(function()
-                            local broadcast = RadioBroadCast.new("alc-distress-" .. tostring(now), -1, -1)
-                            broadcast:AddRadioLine(RadioLine.new(text, 0.9, 0.3, 0.3))
-                            radio.channel:setAiringBroadcast(broadcast)
-                        end)
-                        A.log(caravan.id, "DISTRESS CALL sent")
+                    local cx, cy = math.floor(caravan.x or 0), math.floor(caravan.y or 0)
+                    local callsign = tostring(caravan.callsign or caravan.name)
+                    local text = A.Lines.ui("radio_distress", "MAYDAY MAYDAY: {callsign} under attack at ({x},{y}). Request immediate assistance.", {
+                        callsign = callsign, x = tostring(cx), y = tostring(cy),
+                    })
+                    local aired = false
+                    if A.RadioServer and type(A.RadioServer.air) == "function" then
+                        local entry = A.RadioServer.air(callsign, text, {
+                            x = cx, y = cy, kind = "distress", color = { 0.95, 0.35, 0.35 },
+                        })
+                        if entry ~= nil then aired = true end
                     end
+                    if not aired then
+                        local radio = P() and (P().KnoxRadio or P().KnoxCountyRadio)
+                        if radio and radio.channel and RadioBroadCast ~= nil and RadioLine ~= nil then
+                            pcall(function()
+                                local broadcast = RadioBroadCast.new("alc-distress-" .. tostring(now), -1, -1)
+                                broadcast:AddRadioLine(RadioLine.new(text, 0.9, 0.3, 0.3))
+                                radio.channel:setAiringBroadcast(broadcast)
+                            end)
+                        end
+                    end
+                    A.log(caravan.id, "DISTRESS CALL sent")
                     -- Mark on map for players
                     caravan.distress = { x = caravan.x, y = caravan.y, sinceMs = now }
                 end

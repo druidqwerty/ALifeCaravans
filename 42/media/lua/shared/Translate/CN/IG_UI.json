@@ -279,16 +279,18 @@
     "IGUI_ALC_ui_pkg_tools": "五金与破门工具箱",
     "IGUI_ALC_ui_pkg_tools_desc": "撬棍、铁锤、锯子、螺丝刀与铁钉，适合野外建造与破拆。",
     "IGUI_ALC_ui_pkg_rations": "幸存者口粮补给包",
-    "IGUI_ALC_ui_pkg_rations_desc": "由快递员送达路边的军用口粮、罐头食品与净水瓶。",
+    "IGUI_ALC_ui_pkg_rations_desc": "由快递员送达路边的军用水罐、牛肉干、罐头食品与饮用水瓶。",
     "IGUI_ALC_ui_radio_hail_reply": "{name}（{faction}）位于 ({x},{y})，前往{dest} - 保持 101.6 MHz 守听。",
     "IGUI_ALC_ui_radio_drop_sent": "{callsign} 已将补给箱投送至 ({x},{y})。靠近至 25 格内即可领取。",
     "IGUI_ALC_ui_radio_market_bulletin": "贸易电台市场快讯：{summary}。当前活跃车队：{count}。",
+    "IGUI_ALC_ui_radio_distress": "紧急求救：{callsign} 在 ({x},{y}) 遭到袭击，请求立即支援。",
     "IGUI_ALC_ui_service_radio_tuned": "已将 {device} 调频至 {freq}",
     "IGUI_ALC_ui_service_radio_no_caravan": "无线电通信范围内当前没有友方车队。",
     "IGUI_ALC_ui_service_err_no_radio": "你的背包、手中、车内或附近需要有无线电设备。",
     "IGUI_ALC_ui_service_err_radio_off": "发送讯号前请先打开无线电电源。",
     "IGUI_ALC_ui_service_err_drop_cooldown": "补给调度频道繁忙 - 请等待 {mins} 分钟。",
-    "IGUI_ALC_ui_service_err_drop_credit": "现金或易物物资不足（需要 {cost} 信用）。",
+    "IGUI_ALC_ui_service_err_drop_credit": "主物品栏中的现金或备用食物/医疗物资不足（需要 {cost} 信用；武器与装备受保护）。",
     "IGUI_ALC_ui_service_err_drop_closed": "该路边补给投送已被领取。",
-    "IGUI_ALC_ui_service_err_drop_far": "请移动到路边补给投送点 ({x},{y}) 25 格范围内。"
+    "IGUI_ALC_ui_service_err_drop_far": "请移动到路边补给投送点 ({x},{y}) 25 格范围内。",
+    "IGUI_ALC_ui_service_err_drop_failed": "无法接收补给箱物品 - 请重试。"
 }

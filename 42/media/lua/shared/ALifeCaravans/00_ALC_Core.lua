@@ -8,7 +8,7 @@ ALifeCaravans = ALifeCaravans or {}
 local A = ALifeCaravans
 
 A.MOD_ID = "ALifeCaravans"
-A.VERSION = "0.8.1"
+A.VERSION = "0.8.2"
 A.TAG = "[ALC]"
 A.MODULE = "ALifeCaravans"        -- client<->server command module name
 A.MODDATA_ID = "ALifeCaravanId"   -- vehicle ModData key (authoritative side only)
@@ -243,7 +243,9 @@ function A.refreshSettings()
     s.mergeCaravans = sandbox.MergeCaravans ~= false
     s.caravanCargo = sandbox.CaravanCargo ~= false
     s.weatherEffects = sandbox.WeatherEffects ~= false
-    s.nightTravelPenalty = A.clamp(sandbox.NightTravelPenalty, 0.3, 1.0, d.nightTravelPenalty)
+    local nightRaw = tonumber(sandbox.NightTravelPenalty)
+    if nightRaw ~= nil and nightRaw > 1 then nightRaw = nightRaw / 100 end
+    s.nightTravelPenalty = A.clamp(nightRaw, 0.3, 1.0, d.nightTravelPenalty)
     s.distressCalls = sandbox.DistressCalls ~= false
     s.sosContracts = sandbox.SOSContracts ~= false
     s.sosTimeoutMinutes = A.clamp(sandbox.SOSTimeoutMinutes, 2, 30, d.sosTimeoutMinutes)

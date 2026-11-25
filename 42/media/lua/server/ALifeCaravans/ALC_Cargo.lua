@@ -128,7 +128,18 @@ function K.assistRepair(caravan, player, vehicleId)
         ["Base.Hammer"] = true, ["Base.Crowbar"] = true, ["Base.DuctTape"] = true,
     }
     for _, entry in ipairs(items) do
-        if entry.type == "Base.PetrolCan" and not fuelCandidate then fuelCandidate = entry end
+        if entry.type == "Base.PetrolCan" and not fuelCandidate then
+            local hasFuel = true
+            local itemObj = entry.item
+            if itemObj ~= nil and type(itemObj.getFluidContainer) == "function" then
+                local okFc, fc = pcall(itemObj.getFluidContainer, itemObj)
+                if okFc and fc ~= nil and type(fc.getAmount) == "function" then
+                    local okAmt, amt = pcall(fc.getAmount, fc)
+                    hasFuel = okAmt and (tonumber(amt) or 0) >= 1.0
+                end
+            end
+            if hasFuel then fuelCandidate = entry end
+        end
         if tools[entry.type] and not toolCandidate then toolCandidate = entry end
     end
     if not fuelCandidate and not toolCandidate then
@@ -137,11 +148,31 @@ function K.assistRepair(caravan, player, vehicleId)
         return false, "missing_tools"
     end
     if fuelCandidate and not toolCandidate then
-        local paid = A.Trade.exchange(player, {
-            giveRows = { { type = "Base.PetrolCan", count = 1 } },
-            takeRows = { { item = "Base.EmptyPetrolCan", count = 1 }, { item = A.Trade.currency, count = 75 } },
-        })
-        if not paid then return false, "exchange_failed" end
+        local fc = nil
+        if fuelCandidate.item ~= nil and type(fuelCandidate.item.getFluidContainer) == "function" then
+            local okFc, resFc = pcall(fuelCandidate.item.getFluidContainer, fuelCandidate.item)
+            if okFc then fc = resFc end
+        end
+        if fc ~= nil and type(fc.removeFluid) == "function" then
+            local paid = A.Trade.exchange(player, {
+                giveRows = {},
+                takeRows = { { item = A.Trade.currency, count = 75 } },
+            })
+            if not paid then return false, "exchange_failed" end
+            pcall(function()
+                if type(fc.getAmount) == "function" then
+                    fc:removeFluid(math.min(tonumber(fc:getAmount()) or 0, 5.0))
+                else
+                    fc:removeFluid()
+                end
+            end)
+        else
+            local paid = A.Trade.exchange(player, {
+                giveRows = { { type = "Base.PetrolCan", count = 1 } },
+                takeRows = { { item = A.Trade.currency, count = 75 } },
+            })
+            if not paid then return false, "exchange_failed" end
+        end
     else
         local paid = A.Trade.exchange(player, {
             giveRows = {},

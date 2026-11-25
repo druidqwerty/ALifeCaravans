@@ -217,11 +217,19 @@ end
 
 function Cl.onKeyPressed(key)
     local bind = tonumber(Cl.options.radioKey) or 67
-    if key == bind then
-        local p = player0(0)
-        if p ~= nil and not p:isDead() and A.Style and type(A.Style.openRadioWindow) == "function" then
-            A.Style.openRadioWindow(0, nil)
-        end
+    if key ~= bind then return end
+    if type(isGamePaused) == "function" and isGamePaused() then return end
+    if MainScreen ~= nil and MainScreen.instance ~= nil and type(MainScreen.instance.getIsVisible) == "function"
+            and MainScreen.instance:getIsVisible() then
+        return
+    end
+    if ISChat ~= nil and ISChat.instance ~= nil and ISChat.instance.textEntry ~= nil
+            and type(ISChat.instance.textEntry.isFocused) == "function" and ISChat.instance.textEntry:isFocused() then
+        return
+    end
+    local p = player0(0)
+    if p ~= nil and not p:isDead() and A.Style and type(A.Style.openRadioWindow) == "function" then
+        A.Style.openRadioWindow(0, nil)
     end
 end
 
@@ -240,21 +248,20 @@ function Cl.fill(playerNum, context, worldobjects, test)
             end
         end
     end
-    if #rows == 0 and nearDrop ~= nil and test ~= true and type(context) == "table" and type(context.addOption) == "function" then
-        option(context, L.ui("rbtn_claim_drop", "Claim Supply Drop") .. " [" .. tostring(nearDrop.callsign or "") .. "]", function()
-            Cl.send("radio_claim_drop", { id = nearDrop.id }, playerNum)
-        end)
-        return
-    end
-    if #rows == 0 then return end
+    if #rows == 0 and nearDrop == nil then return end
     if test == true then
         if ISWorldObjectContextMenu and type(ISWorldObjectContextMenu.setTest) == "function" then
             return ISWorldObjectContextMenu.setTest()
         end
         return
     end
-    if type(context) ~= "table" or type(context.addOption) ~= "function" or type(context.getNew) ~= "function"
-        or type(context.addSubMenu) ~= "function" then return end
+    if type(context) ~= "table" or type(context.addOption) ~= "function" then return end
+    if nearDrop ~= nil then
+        option(context, L.ui("rbtn_claim_drop", "Claim Supply Drop") .. " [" .. tostring(nearDrop.callsign or "") .. "]", function()
+            Cl.send("radio_claim_drop", { id = nearDrop.id }, playerNum)
+        end)
+    end
+    if #rows == 0 or type(context.getNew) ~= "function" or type(context.addSubMenu) ~= "function" then return end
     local row = rows[1]
     local entry, id = row.entry, row.id
     local kind = L.ui("kind_" .. tostring(entry.kind), tostring(entry.kind))

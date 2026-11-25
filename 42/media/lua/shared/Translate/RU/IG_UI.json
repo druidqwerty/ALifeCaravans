@@ -279,16 +279,18 @@
     "IGUI_ALC_ui_pkg_tools": "Набор инструмента и ломов",
     "IGUI_ALC_ui_pkg_tools_desc": "Монтировка, молоток, пила, отвёртка и гвозди для выживания и стройки.",
     "IGUI_ALC_ui_pkg_rations": "Сухпайки выжившего",
-    "IGUI_ALC_ui_pkg_rations_desc": "Сухпайки MRE, консервы и запас чистой воды с доставкой курьером.",
+    "IGUI_ALC_ui_pkg_rations_desc": "Армейские водные пайки, вяленое мясо, консервы и бутылки воды с доставкой курьером.",
     "IGUI_ALC_ui_radio_hail_reply": "{name} ({faction}) в ({x},{y}) курсом на {dest} — на связи на 101.6 МГц.",
     "IGUI_ALC_ui_radio_drop_sent": "{callsign} доставил ящик припасов в ({x},{y}). Подойдите ближе 25 клеток, чтобы забрать.",
     "IGUI_ALC_ui_radio_market_bulletin": "Рыночная сводка караванов: {summary}. Колонн в пути: {count}.",
+    "IGUI_ALC_ui_radio_distress": "SOS SOS: {callsign} под атакой в ({x},{y}). Требуется срочная помощь.",
     "IGUI_ALC_ui_service_radio_tuned": "{device}: настроена частота {freq}",
     "IGUI_ALC_ui_service_radio_no_caravan": "Поблизости нет дружественных караванов на связи.",
     "IGUI_ALC_ui_service_err_no_radio": "Нужна рация в инвентаре, руках, машине или рядом.",
     "IGUI_ALC_ui_service_err_radio_off": "Включите рацию перед выходом в эфир.",
     "IGUI_ALC_ui_service_err_drop_cooldown": "Частота снабжения занята — подождите {mins} мин.",
-    "IGUI_ALC_ui_service_err_drop_credit": "Недостаточно наличных или товаров обмена (требуется {cost}).",
+    "IGUI_ALC_ui_service_err_drop_credit": "Недостаточно наличных или запасной еды/медицины в основном инвентаре (нужно {cost}; оружие и снаряжение защищены).",
     "IGUI_ALC_ui_service_err_drop_closed": "Этот груз снабжения уже получен.",
-    "IGUI_ALC_ui_service_err_drop_far": "Подойдите ближе 25 клеток к точке сброса груза ({x},{y})."
+    "IGUI_ALC_ui_service_err_drop_far": "Подойдите ближе 25 клеток к точке сброса груза ({x},{y}).",
+    "IGUI_ALC_ui_service_err_drop_failed": "Не удалось передать содержимое груза — попробуйте ещё раз."
 }

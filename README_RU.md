@@ -8,7 +8,19 @@
 
 Бесплатно и с открытым кодом. Код разрабатывается с помощью ИИ; постановка задач, тестирование и время — мои. [Поддержать моды на Boosty](https://boosty.to/lrgpp).
 
-> **0.8.1 — Добавлена полная китайская локализация (`CN` упрощённый и `CH` традиционный) для всех реплик караванов, окон контакта/торговли/рации, настроек Sandbox и Модов (поверх обновления 0.8.0 под Project A-Life 1.5.1 и радиосети 101.6 МГц).** [Проверки и ограничения 0.8.0](TEST_0.8.0.md).
+> **0.8.2 — Полная совместимость с Project Zomboid 42.22.2 и Project A-Life 1.5.3, критический фикс защиты оружия, инструментов, раций, связок ключей и вещей с пояса при заказе сброса припасов (`@PriestSmokey`), работа с канистрами B42 `FluidContainer` и обновление 11 устаревших ID предметов/транспорта.**
+
+## Новое в 0.8.2
+
+- **Критическая защита снаряжения при заказе сброса припасов и бартере (`09_ALC_Radio.lua`, `05_ALC_Trade.lua`):**
+  - Исправлен баг по репорту `@PriestSmokey`, из-за которого заказ сброса припасов по рации мог списать дробовик, нож, рацию или связку ключей в счёт оплаты.
+  - Предметы на поясе/слотах (`isAttachedItem` / `getAttachedSlot >= 0`), в руках, ключи и связки ключей, контейнеры/рюкзаки, рации, оружие, заряженный огнестрел, одежда, ручки/карандаши, избранные и надетые вещи теперь строго защищены. Авто-оплата сброса припасов списывает только наличные (`Base.Money`, `Base.MoneyBundle`) и безопасные расходники (еда/медицина/бартер).
+  - Исправлена проверка `inspectDevice`: рация с севшей батареей (`power <= 0.001`) больше не считается включённой.
+- **Совместимость с Project Zomboid 42.22.2 и Project A-Life 1.5.3 (`03_ALC_Roads.lua`, `ALC_Spawn.lua`, `04_ALC_Convoy.lua`, `06_ALC_Physics.lua`, `02_ALC_Vehicles.lua`, `ALC_Cargo.lua`):**
+  - Интеграция с модулями Project A-Life 1.5.2/1.5.3 (`CarSweep`, `CarOffline`, `CarWatchdog`, `CarBrain`, `DrivingBoarding.seatResult`, `DrivingLifecycle.carseatRelease`, `DrivingBrakeRelease`, `HeliModels`) и устранение блокировки спавна караванов на шоссе (`cars8_site_rim` / `Cars9.streetSite` / `VehicleArrivals.minSiteTiles`).
+  - Заменены 11 удалённых/переименованных ID предметов и машин Build 42.22.2 (`Base.WaterBottle`, `Base.WaterRationCan`, `Base.WalkieTalkie4`, `Base.CigarettePack`, `Base.Coffee2`, `Base.Flour2`, `Base.Bullets357Box`, `Base.PotatoBagSeed2`, `Base.CabbageBagSeed2`, `Base.VanAmbulance`), а помощь с ремонтом/заправкой (`ALC_Cargo.assistRepair`) переведена на B42 `FluidContainer`.
+- **Прочие исправления (`00_ALC_Core.lua`, `ALC_RadioServer.lua`, `ALC_Director.lua`, `ALC_Interact.lua`, `ALC_Client.lua`, `ALC_RadioWindow.lua`):**
+  - Исправлена нормализация `NightTravelPenalty` (`/ 100`), атомарная выдача ящика снабжения (`claimSupplyDrop`), локализованный радиосигнал SOS (`distressTick`), передача предмета при угрозе (`threaten`), отображение пункта «Забрать сброс припасов» рядом с караванами, защита клавиши F9 от срабатывания в паузе/меню/чате и кэширование (500 мс) в `ALCRadioWindow:prerender()`.
 
 ## Новое в 0.8.1
 
@@ -101,7 +113,7 @@
 
 После удаления погибшего пассажира-NPC экипаж также может восстановить вождение с игроком на пассажирском месте. Проверяются подтверждённая гибель NPC, личности выживших, принадлежность остановленной машины и разрешение совместной поездки. Место водителя-игрока не захватывается.
 
-- **Project Zomboid Build 42.21** и **Project A-Life 1.5.1+** — проверенная конфигурация 0.8.1. A-Life Driving должен быть включён. Более новые версии игры и зависимостей требуют отдельной проверки.
+- **Project Zomboid Build 42.22.2** и **Project A-Life 1.5.3** — проверенная конфигурация 0.8.2. A-Life Driving должен быть включён. Более новые версии игры и зависимостей требуют отдельной проверки.
 - [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sharedfiles/filedetails/?id=3803984183).
 - [A-Life: Factions Expanded](https://steamcommunity.com/sharedfiles/filedetails/?id=3813871509) — опционально, но для полноценного опыта рекомендуется.
 - [Project A-Life – Jeem Extension](https://steamcommunity.com/sharedfiles/filedetails/?id=3806944055) — опционально, но для полноценного опыта рекомендуется: его публичная палитра интегрируется с новыми окнами.
@@ -124,7 +136,7 @@
 
 [Отчёт по текущей сборке 0.8.0](TEST_0.8.0.md). Предыдущие проверки описаны в [0.7.2](TEST_0.7.2.md), [0.7.1](TEST_0.7.1.md), [0.6.3](TEST_0.6.3.md), [0.6.2](TEST_0.6.2.md), [0.6.1](TEST_0.6.1.md), двухклиентские сетевые проверки — в [0.6.0](TEST_0.6.0.md), а проверки загрузки с пассажиром и замены водителя — в [0.5.0](TEST_0.5.0.md).
 
-Проверки разработчика: `python tools/run_test.py` (496 проверок) и `python tools/pz_loadcheck.py`.
+Проверки разработчика: `python tools/run_test.py` (517 проверок) и `python tools/pz_loadcheck.py`.
 
 ## Текущие ограничения
 

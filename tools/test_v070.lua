@@ -472,5 +472,293 @@ return function(check, newVehicle)
     local okMkt, mktList = A.RadioServer.requestMarketIntel(PLAYER)
     check("radio_market_intel compiles regional town shortage summary", okMkt == true and type(mktList) == "table" and #mktList >= 2)
     A.settings.requirePoweredRadio = true
+
+    -- 9. v0.8.2: PriestSmokey supply-drop item protection, B42.22.2 items, & A-Life 1.5.3 compat hooks
+    -- Verify NightTravelPenalty integer (30..100) normalizes to 0.3..1.0 instead of clamping to 1.0
+    local prevSandbox = SandboxVars
+    SandboxVars = { ALifeCaravans = { NightTravelPenalty = 70 } }
+    A.refreshSettings()
+    check("NightTravelPenalty=70 normalizes to 0.7 multiplier", math.abs((A.settings.nightTravelPenalty or 0) - 0.7) < 0.001, tostring(A.settings.nightTravelPenalty))
+    SandboxVars = prevSandbox
+    A.refreshSettings()
+
+    -- PriestSmokey protection test: attached shotgun/knife, walkie-talkie, keyring, backpack, pen MUST NEVER be spent!
+    local gearItems = {}
+    local function mkGear(ft, props)
+        local it = {
+            type = ft,
+            getFullType = function(self) return self.type end,
+            getType = function(self) return (string.gsub(self.type, "^Base%.", "")) end,
+            getDisplayCategory = function() return props.dcat or "Junk" end,
+            getCategory = function() return props.cat or "Normal" end,
+            isFavorite = function() return props.fav == true end,
+            isEquipped = function() return props.eq == true end,
+            getAttachedSlot = function() return props.slot or -1 end,
+            isKeyRing = function() return props.keyring == true end,
+            getInventory = function() return props.inv end,
+            getDeviceData = function() return props.dd end,
+            getCurrentAmmoCount = function() return props.ammo or 0 end,
+        }
+        gearItems[#gearItems + 1] = it
+        return it
+    end
+    local gShotgun = mkGear("Base.Shotgun", { slot = 0, dcat = "Weapon", ammo = 6 })
+    local gKnife = mkGear("Base.HuntingKnife", { dcat = "Weapon" })
+    local gRadio = mkGear("Base.WalkieTalkie4", { dcat = "Communications", dd = { getIsTurnedOn = function() return true end, getIsBatteryPowered = function() return true end, getPower = function() return 0.5 end, getChannel = function() return 101600 end, getDeviceName = function() return "WalkieTalkie4" end } })
+    local gKeyRing = mkGear("Base.KeyRing", { keyring = true, dcat = "Container", cat = "KeyRing" })
+    local gBag = mkGear("Base.Bag_BigHikingBag", { dcat = "Container", inv = { getItems = function() return { size = function() return 0 end } end } })
+    local gPen = mkGear("Base.Pen", { dcat = "HouseholdWeapon" })
+    local gMoney = {}
+    local gearInv = {
+        items = gearItems,
+        getItems = function(self)
+            return {
+                size = function() return #self.items end,
+                get = function(_, idx) return self.items[idx + 1] end,
+            }
+        end,
+        Remove = function(self, target)
+            for i = #self.items, 1, -1 do
+                if self.items[i] == target then table.remove(self.items, i) return end
+            end
+        end,
+        AddItem = function(self, item)
+            if type(item) == "table" then self.items[#self.items + 1] = item return item end
+            local created = mkGear(item, { dcat = "Food" })
+            return created
+        end,
+    }
+    local gearPlayer = {
+        getInventory = function() return gearInv end,
+        isAttachedItem = function(_, it) return it == gKnife or it == gShotgun end,
+        isEquipped = function() return false end,
+        isHandItem = function() return false end,
+        getX = function() return 148 end, getY = function() return 100 end, getZ = function() return 0 end,
+        getUsername = function() return "smokey" end,
+        getPlayerNum = function() return 0 end,
+    }
+    -- With 0 cash and only protected gear, credit MUST be 0 (never counts shotgun, knife, radio, keyring, bag, pen!)
+    local cZero = A.Radio.countPlayerCredit(gearPlayer)
+    check("supply-drop credit ignores shotgun, knife, radio, keyring, backpack, and pen", cZero == 0, tostring(cZero))
+    local okNoCash, whyNoCash = A.Radio.spendPlayerCredit(gearPlayer, 65)
+    check("spendPlayerCredit refuses when player only carries protected gear", okNoCash == false and whyNoCash == "insufficient_credit" and #gearInv.items == 6)
+
+    -- Add 7 bills (70 credit) and spend 65: only cash removed, all 6 gear items untouched!
+    for _ = 1, 7 do
+        gMoney[#gMoney + 1] = mkGear("Base.Money", { dcat = "Junk" })
+    end
+    local cCash = A.Radio.countPlayerCredit(gearPlayer)
+    check("supply-drop credit counts only cash when gear is present", cCash == 70, tostring(cCash))
+    local okPaidGear = A.Radio.spendPlayerCredit(gearPlayer, 65)
+    local hasGear = {}
+    for _, it in ipairs(gearInv.items) do hasGear[it] = true end
+    check("spending supply-drop credit preserves shotgun, knife, radio, keyring, bag, and pen",
+        okPaidGear == true and hasGear[gShotgun] and hasGear[gKnife] and hasGear[gRadio]
+        and hasGear[gKeyRing] and hasGear[gBag] and hasGear[gPen], tostring(#gearInv.items))
+
+    -- Radio battery power check: dead battery must fail hasPower / canUseRadio
+    local deadRadio = mkGear("Base.WalkieTalkie2", {
+        dcat = "Communications",
+        dd = {
+            getIsTurnedOn = function() return true end,
+            getIsBatteryPowered = function() return true end,
+            getPower = function() return 0 end,
+            getChannel = function() return 101600 end,
+            getDeviceName = function() return "DeadRadio" end,
+        },
+    })
+    local deadPlayer = {
+        getInventory = function()
+            return { getItems = function() return { size = function() return 1 end, get = function() return deadRadio end } end }
+        end,
+        getX = function() return 10 end, getY = function() return 10 end, getZ = function() return 0 end,
+    }
+    A.settings.requirePoweredRadio = true
+    local okDead, whyDead = A.Radio.canUseRadio(deadPlayer)
+    check("dead-battery walkie-talkie is rejected by canUseRadio", okDead == false and whyDead == "radio_off", tostring(whyDead))
+    local okLive = A.Radio.canUseRadio(gearPlayer)
+    check("powered walkie-talkie is accepted by canUseRadio", okLive == true)
+
+    -- pkg_rations uses real PZ 42.22.2 items (no Base.MRE / Base.WaterBottleFull)
+    local rationsPkg = A.Radio.packageById("pkg_rations")
+    local rationsValid = rationsPkg ~= nil
+    for _, row in ipairs(rationsPkg and rationsPkg.items or {}) do
+        if row[1] == "Base.MRE" or row[1] == "Base.WaterBottleFull" then rationsValid = false end
+    end
+    check("pkg_rations uses valid B42.22.2 items (no MRE / WaterBottleFull)", rationsValid)
+
+    -- claimSupplyDrop does NOT mark claimed when A.Trade.exchange fails
+    local failDrop = { id = "drop:failtest", callsign = "Supply-Fail", state = "ready", x = 148, y = 100, items = { { "Base.Bandage", 1 } } }
+    A.RadioServer.store().dispatches[failDrop.id] = failDrop
+    local origExchange = A.Trade.exchange
+    A.Trade.exchange = function() return false, "inventory_failed" end
+    local okFailClaim, failWhy = A.RadioServer.claimSupplyDrop(gearPlayer, failDrop.id)
+    A.Trade.exchange = origExchange
+    check("claimSupplyDrop keeps drop ready if inventory exchange fails",
+        okFailClaim == false and failDrop.state == "ready" and A.RadioServer.store().dropReceipts[failDrop.id] == nil, tostring(failWhy))
+    A.RadioServer.store().dispatches[failDrop.id] = nil
+
+    -- B42 FluidContainer PetrolCan assistRepair drains fluid without creating non-existent Base.EmptyPetrolCan
+    local fluidAmt = 10.0
+    local fcCan = {
+        type = "Base.PetrolCan",
+        getFullType = function() return "Base.PetrolCan" end,
+        getFluidContainer = function()
+            return {
+                getAmount = function() return fluidAmt end,
+                removeFluid = function(_, n) fluidAmt = math.max(0, fluidAmt - (n or fluidAmt)) end,
+            }
+        end,
+    }
+    local fluidMoney = 0
+    local fluidPlayer = {
+        getInventory = function()
+            return {
+                getItems = function() return { size = function() return 1 end, get = function() return fcCan end } end,
+                AddItem = function(_, ft)
+                    if ft == "Base.EmptyPetrolCan" then return nil end
+                    if ft == "Base.Money" then fluidMoney = fluidMoney + 1 end
+                    return { type = ft }
+                end,
+                Remove = function() end,
+            }
+        end,
+        getX = function() return 120 end, getY = function() return 100 end, getZ = function() return 0 end,
+        getUsername = function() return "mechanic" end,
+        getPlayerNum = function() return 0 end,
+    }
+    ecoCaravan.halted = true
+    ecoCaravan.haltReason = "roadside_inspection"
+    local okFluidRep = K.assistRepair(ecoCaravan, fluidPlayer, van:getId())
+    check("assistRepair with B42 FluidContainer PetrolCan drains fluid and pays cash without EmptyPetrolCan",
+        okFluidRep == true and math.abs(fluidAmt - 5.0) < 0.01 and fluidMoney == 75,
+        string.format("amt=%s money=%d", tostring(fluidAmt), fluidMoney))
+    fluidAmt = 0.0
+    local okEmptyRep, whyEmptyRep = K.assistRepair(ecoCaravan, fluidPlayer, van:getId())
+    check("assistRepair rejects empty B42 PetrolCan when no tools are carried", okEmptyRep == false and whyEmptyRep == "missing_tools", tostring(whyEmptyRep))
+
+    -- Project A-Life 1.5.3 compatibility hooks: CarSweep, CarOffline, CarWatchdog, CarBrain, DrivingBoarding.seatResult, carseatRelease, HeliModels
+    local sweepCalled, offlineBeginCalled, wdCalled, brainWatchCalled, brainApplyCalled, seatResCalled, carseatRelCalled = 0, 0, 0, 0, 0, 0, 0
+    ProjectALife.CarSweep = { kindOf = function() sweepCalled = sweepCalled + 1 return "arrival" end }
+    ProjectALife.CarOffline = {
+        begin = function() offlineBeginCalled = offlineBeginCalled + 1 return "sq_ok" end,
+        world = {
+            liveBindings = function()
+                return { { carId = convCar1:getId() }, { carId = plainCar:getId() } }
+            end,
+        },
+    }
+    ProjectALife.CarWatchdog = { idle = function() wdCalled = wdCalled + 1 end }
+    ProjectALife.CarBrain = {
+        watch = function() brainWatchCalled = brainWatchCalled + 1 return true end,
+        apply = function() brainApplyCalled = brainApplyCalled + 1 return true end,
+    }
+    ProjectALife.DrivingBoarding = {
+        seatResult = function() seatResCalled = seatResCalled + 1 return true end,
+    }
+    ProjectALife.HeliModels = {
+        isHeliScript = function(name) return name == "Base.HueyCustom" end,
+    }
+    ProjectALife.DrivingLifecycle.carseatRelease = function() carseatRelCalled = carseatRelCalled + 1 end
+    for _, lbl in ipairs({ "CarSweep.kindOf", "CarOffline.begin", "CarOffline.world.liveBindings",
+            "CarWatchdog.idle", "CarBrain.watch", "CarBrain.apply", "DrivingBoarding.seatResult" }) do
+        A.wrapped[lbl] = nil
+    end
+    A.Spawn.installed = false
+    A.Spawn.install()
+    C.hooksInstalled = false
+    C.installHooks()
+
+    check("CarSweep.kindOf excludes tagged caravan car and keeps untagged arrival car",
+        ProjectALife.CarSweep.kindOf(convCar1, convCar1:getModData()) == nil
+        and ProjectALife.CarSweep.kindOf(plainCar, {}) == "arrival" and sweepCalled == 1)
+    local coCaravanId, coWhy = ProjectALife.CarOffline.begin({ carId = convCar1:getId() })
+    local coPlainId = ProjectALife.CarOffline.begin({ carId = plainCar:getId() })
+    local liveFiltered = ProjectALife.CarOffline.world.liveBindings()
+    check("CarOffline hooks refuse caravan car and filter it from liveBindings",
+        coCaravanId == nil and coWhy == "alc_caravan_vehicle" and coPlainId == "sq_ok"
+        and #liveFiltered == 1 and liveFiltered[1].carId == plainCar:getId())
+
+    ProjectALife.CarWatchdog.idle(nil, { vehicle = convCar1 }, A.now())
+    ProjectALife.CarWatchdog.idle(nil, { vehicle = plainCar }, A.now())
+    check("CarWatchdog.idle skips caravan car and passes through non-caravan car", wdCalled == 1, tostring(wdCalled))
+
+    ProjectALife.CarBrain.watch(nil, { vehicle = convCar1 }, A.now())
+    ProjectALife.CarBrain.watch(nil, { vehicle = plainCar }, A.now())
+    ProjectALife.CarBrain.apply(nil, convCar1:getId(), "exit", "siege", {}, A.now())
+    ProjectALife.CarBrain.apply(nil, plainCar:getId(), "exit", "siege", {}, A.now())
+    check("CarBrain.watch and CarBrain.apply skip caravan cars and run for non-caravan cars",
+        brainWatchCalled == 1 and brainApplyCalled == 1,
+        string.format("w=%d a=%d", brainWatchCalled, brainApplyCalled))
+
+    local dummyBody = {
+        getBodyDamage = function() return nil end,
+        getVehicle = function() return convCar1 end,
+        isDead = function() return false end,
+        god = false,
+        isGodMod = function(s) return s.god end,
+        setGodMod = function(s, v) s.god = v end,
+    }
+    ProjectALife.DrivingBoarding.seatResult({ npc = dummyBody, vehicle = convCar1 })
+    check("DrivingBoarding.seatResult wrapper enforces BodyDamage crash guard", seatResCalled == 1 and dummyBody.god == true)
+
+    -- HeliModels & aircraft pattern filter
+    check("02_ALC_Vehicles blocks HeliModels and aircraft/boat scripts",
+        not V.valid("Base.HueyCustom") and not V.valid("Base.Helicopter_UH1") and not V.valid("Base.BoatMotor"))
+
+    -- DrivingBrakeRelease cooperation
+    local brkCar = { isLocalPhysicSim = function() return true end }
+    ProjectALife.DrivingBrakeRelease = { active = { [brkCar] = true } }
+    local okBrk, whyBrk = A.Physics.releaseBrake(brkCar, false)
+    ProjectALife.DrivingBrakeRelease = nil
+    check("Physics.releaseBrake defers when A-Life DrivingBrakeRelease is active on the vehicle",
+        okBrk == false and whyBrk == "brake_release_active", tostring(whyBrk))
+
+    -- Distress call airs on Caravan Radio Server (not dead KnoxCountyRadio-only path)
+    local logBefore = #A.RadioServer.recentBroadcasts()
+    multiCaravan.ambush = { state = "fighting" }
+    multiCaravan.distressSent = nil
+    A.Director.distressCheckAtMs = 0
+    A.Director.distressTick(A.now() + 10000, {})
+    check("distressTick broadcasts MAYDAY onto 101.6 MHz Caravan Radio log",
+        multiCaravan.distressSent == true and #A.RadioServer.recentBroadcasts() == logBefore + 1)
+    multiCaravan.ambush = nil
+
+    -- hailNearestCaravan increments A.metrics.halts exactly once (no double count)
+    A.settings.requirePoweredRadio = false
+    multiCaravan.halted = nil
+    local haltsBefore = A.metrics.halts
+    A.RadioServer.hailNearestCaravan(PLAYER)
+    check("hailNearestCaravan increments A.metrics.halts once (not double-counted)", A.metrics.halts == haltsBefore + 1, tostring(A.metrics.halts - haltsBefore))
+    A.settings.requirePoweredRadio = true
+
+    -- A-Life 1.5.3 cars8_site_rim fallback in 03_ALC_Roads.siteNear & Nav highway VehicleZone fallback
+    local origSites = ProjectALife.VehicleArrivalSites
+    local origRoad = ProjectALife.Road
+    local origRoute = ProjectALife.DrivingRoute
+    ProjectALife.Road = {
+        isRoadSquare = function() return true end,
+        isPavedSurface = function() return true end,
+    }
+    ProjectALife.DrivingRoute = {
+        square = function(_, sx, sy)
+            return { sq = { isOutside = function() return true end }, reason = nil, roadside = nil, x = sx, y = sy }
+        end,
+        edge = function() return false end,
+        openFootprint = function() return true end,
+    }
+    ProjectALife.VehicleArrivalSites = {
+        road = function() return false end, -- simulates Cars9.streetSite rejecting VehicleZone on Nav highway
+        space = function() return false end, -- simulates cars8_site_rim rejecting tiles near chunk edge
+        link = function() return false end,
+    }
+    local rimScene = { bodies = {}, reserved = {}, players = { { x = 100, y = 100 } } }
+    local rimSite, rimWhy = A.Roads.siteNear(rimScene, 145, 100, { { x = 100, y = 100 } }, { radius = 12, minPlayer = 40 })
+    local rimLink = A.Roads.link(rimScene, { x = 145.5, y = 100.5 }, { x = 149.5, y = 100.5 })
+    ProjectALife.VehicleArrivalSites = origSites
+    ProjectALife.Road = origRoad
+    ProjectALife.DrivingRoute = origRoute
+    check("03_ALC_Roads.siteNear recovers from A-Life 1.5.3 cars8_site_rim & highway VehicleZone rejections",
+        rimSite ~= nil and rimLink == true, tostring(rimWhy))
 end
 

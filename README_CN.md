@@ -8,7 +8,18 @@
 
 免费开源。代码在 AI 辅助下编写，方向把控、测试与时间投入由作者本人完成。[在 Boosty 上支持模组开发](https://boosty.to/lrgpp)。
 
-> **0.8.1 — 新增完整简体中文（`CN`）与繁体中文（`CH`）本地化支持，涵盖全部车队 NPC 对话、接触/交易/电台界面、沙盒设置与个人模组选项（基于 0.8.0 的 Project A-Life 1.5.1 适配与 101.6 MHz 电台调度版本）。** 参见 [0.8.0 验证与限制报告](TEST_0.8.0.md)。
+> **0.8.2 — 全面兼容 Project Zomboid 42.22.2 与 Project A-Life 1.5.3，重点修复订购路边补给箱时误扣玩家武器/工具/电台/钥匙串及腰带装备的问题（`@PriestSmokey`），适配 B42 `FluidContainer` 油桶加油，并更新 11 个失效的 B42.22.2 物品与载具 ID。**
+
+## 0.8.2 更新内容
+
+- **路边补给投送与易物装备保护修复（`09_ALC_Radio.lua`、`05_ALC_Trade.lua`）：**
+  - 修复 `@PriestSmokey` 反馈的严重问题：订购补给箱时不再消耗装备栏/腰带槽位、手持物品、钥匙与钥匙串、背包容器、对讲机/电台、武器、装弹枪械、衣物、书写工具或收藏物品。补给箱自动扣款现仅限现金与安全的非受保护消耗品。
+  - 修复 `inspectDevice` 电量判定：没电的对讲机（`power <= 0.001`）不再被误判为有电可用。
+- **Project Zomboid 42.22.2 与 Project A-Life 1.5.3 全面适配（`03_ALC_Roads.lua`、`ALC_Spawn.lua`、`04_ALC_Convoy.lua`、`06_ALC_Physics.lua`、`02_ALC_Vehicles.lua`、`ALC_Cargo.lua`）：**
+  - 对接 Project A-Life 1.5.2/1.5.3 新模块（`CarSweep`、`CarOffline`、`CarWatchdog`、`CarBrain`、`DrivingBoarding.seatResult`、`DrivingLifecycle.carseatRelease`、`DrivingBrakeRelease`、`HeliModels`），修复高速公路刷新死锁（`cars8_site_rim` / `Cars9.streetSite` / `VehicleArrivals.minSiteTiles`）。
+  - 更新 11 个在 Build 42.22.2 中改名或移除的物品/载具 ID（如 `Base.WaterBottle`、`Base.WaterRationCan`、`Base.WalkieTalkie4`、`Base.CigarettePack`、`Base.VanAmbulance` 等），并将路边协助修车加油改为 B42 `FluidContainer` 液位扣油。
+- **其他修复与优化（`00_ALC_Core.lua`、`ALC_RadioServer.lua`、`ALC_Director.lua`、`ALC_Interact.lua`、`ALC_Client.lua`、`ALC_RadioWindow.lua`）：**
+  - 修复 `NightTravelPenalty` 沙盒数值归一化（`/ 100`）、补给箱领取原子校验、SOS 遇险广播、威胁勒索交物、右键菜单同时显示补给箱与车队、F9 快捷键暂停/菜单/聊天防误触以及电台窗口 500ms 缓存优化。
 
 ## 0.8.1 更新内容
 
@@ -57,7 +68,7 @@
 
 ## 依赖与安装
 
-- **验证运行环境：** Project Zomboid Build 42.21 与 Project A-Life 1.5.1（需开启 NPC 驾驶 `Driving`）。
+- **验证运行环境：** Project Zomboid Build 42.22.2 与 Project A-Life 1.5.3（需开启 NPC 驾驶 `Driving`）。
 - **必装前置：** [Project A-Life [ALIFE NPCS]](https://steamcommunity.com/sharedfiles/filedetails/?id=3803984183)。
 - **可选推荐：** [A-Life: Factions Expanded](https://steamcommunity.com/sharedfiles/filedetails/?id=3813871509) 与 [Project A-Life – Jeem Extension](https://steamcommunity.com/sharedfiles/filedetails/?id=3806944055)。
 - 所有玩家与服务器需保持一致的模组版本。加载顺序：`ProjectALifeNPCs;ALifeCaravans`。无需安装 Java 组件或 `ZombieBuddy`。

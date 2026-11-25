@@ -282,6 +282,53 @@ function S.install()
             end
         end, "CarLife.eligible")
     end
+    -- Project A-Life 1.5.3 CarSweep removes empty NPC arrival cars; exclude active tagged caravan cars.
+    if type(p.CarSweep) == "table" and type(p.CarSweep.kindOf) == "function" then
+        A.wrap(p.CarSweep, "kindOf", function(original)
+            return function(car, data, ...)
+                if type(data) == "table" and data[A.MODDATA_ID] ~= nil then return nil end
+                if car ~= nil and A.vehicleTag(car) ~= nil then return nil end
+                return original(car, data, ...)
+            end
+        end, "CarSweep.kindOf")
+    end
+    -- Prevent Project A-Life 1.5.3 CarOffline from adopting parked/dismounted caravan cars.
+    if type(p.CarOffline) == "table" then
+        if type(p.CarOffline.begin) == "function" then
+            A.wrap(p.CarOffline, "begin", function(original)
+                return function(args, ...)
+                    local id = type(args) == "table" and args.carId or nil
+                    if id ~= nil then
+                        if A.Ledger and type(A.Ledger.byVehicle) == "function" and A.Ledger.byVehicle(id) ~= nil then
+                            return nil, "alc_caravan_vehicle"
+                        end
+                        local car = type(getVehicleById) == "function" and getVehicleById(id) or nil
+                        if car ~= nil and A.vehicleTag(car) ~= nil then return nil, "alc_caravan_vehicle" end
+                    end
+                    return original(args, ...)
+                end
+            end, "CarOffline.begin")
+        end
+        if type(p.CarOffline.world) == "table" and type(p.CarOffline.world.liveBindings) == "function" then
+            A.wrap(p.CarOffline.world, "liveBindings", function(original)
+                return function(...)
+                    local rows = original(...)
+                    if type(rows) ~= "table" then return rows end
+                    local out = {}
+                    for _, row in ipairs(rows) do
+                        local id = type(row) == "table" and row.carId or nil
+                        local isCaravan = id ~= nil and A.Ledger and type(A.Ledger.byVehicle) == "function" and A.Ledger.byVehicle(id) ~= nil
+                        if not isCaravan and id ~= nil and type(getVehicleById) == "function" then
+                            local car = getVehicleById(id)
+                            if car ~= nil and A.vehicleTag(car) ~= nil then isCaravan = true end
+                        end
+                        if not isCaravan then out[#out + 1] = row end
+                    end
+                    return out
+                end
+            end, "CarOffline.world.liveBindings")
+        end
+    end
     return true
 end
 
@@ -424,6 +471,24 @@ function S.render(caravan, player, players, unit)
     while #crew > limit do table.remove(crew) end
     if #scripts == 1 then perCar = { #crew } end
     local last = points[#points]
+    local objX, objY = last.x, last.y
+    local minSite = tonumber(p.VehicleArrivals and p.VehicleArrivals.minSiteTiles) or 28
+    local gap = A.dist(sites[1].x, sites[1].y, objX, objY)
+    if gap < minSite + 4 then
+        local dx, dy = objX - sites[1].x, objY - sites[1].y
+        if gap < 0.5 then
+            local farGoal = caravan.goals and caravan.goals[#caravan.goals] or nil
+            if farGoal ~= nil then
+                dx, dy = farGoal.x - sites[1].x, farGoal.y - sites[1].y
+                gap = A.dist(sites[1].x, sites[1].y, farGoal.x, farGoal.y)
+            end
+        end
+        if gap >= 0.5 then
+            local reach = minSite + 6
+            objX = sites[1].x + (dx / gap) * reach
+            objY = sites[1].y + (dy / gap) * reach
+        end
+    end
     S.serial = S.serial + 1
     local requestId = "alc:" .. tostring(caravan.id) .. ":" .. tostring(S.serial)
     local args = {
@@ -434,7 +499,7 @@ function S.render(caravan, player, players, unit)
         x = sites[1].x, y = sites[1].y, z = 0,
         mode = "patrol", radius = 12, distance = 0, separation = 1,
         arrival = "ground",
-        objectiveX = last.x, objectiveY = last.y,
+        objectiveX = objX, objectiveY = objY,
         atomicGroup = true,
         encounterId = "alc_caravan",
         encounterPersistent = false,
@@ -509,6 +574,7 @@ function S.releaseCar(vehicleId, caravanId)
             if record ~= nil then
                 if record.restored and record.restored ~= s then D.release(record.restored) end
                 if record.session and record.session ~= s then D.release(record.session) end
+                if L ~= nil and type(L.carseatRelease) == "function" then L.carseatRelease(record, car) end
             end
             if s ~= nil and L ~= nil and type(L.forget) == "function" then L.forget(s) end
         end)
